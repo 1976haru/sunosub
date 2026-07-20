@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>유튜브 추출기 & 번역기</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">LOCAL CREATOR TOOL</p>
+        <h1>유튜브 추출기 & 번역기</h1>
+        <p class="hero-copy">영상 제목과 설명을 가져오고 최대 50개 언어로 번역합니다. API 키는 내 PC의 <code>.gemini_key</code>에만 보관됩니다.</p>
+      </div>
+      <div id="statusBadges" class="status-badges"></div>
+    </header>
+
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="url">YouTube URL</button>
+        <button class="tab" data-tab="manual">직접 입력</button>
+      </div>
+
+      <div id="urlTab" class="tab-view active">
+        <label class="label" for="youtubeUrl">YouTube 영상 주소</label>
+        <div class="input-action-row">
+          <input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+          <button id="extractBtn" class="btn primary">제목·설명 추출</button>
+        </div>
+        <p class="hint">Gemini 키가 설정돼 있으면 URL과 검색 결과를 확인해 정확히 가져옵니다. 키가 없으면 유튜브 페이지에서 직접(비공식) 제목·설명을 읽어옵니다.</p>
+      </div>
+
+      <div id="manualTab" class="tab-view">
+        <p class="hint">URL 추출이 어려운 비공개 영상이나 작성 중인 영상은 아래 제목과 설명을 직접 입력하면 됩니다.</p>
+      </div>
+
+      <div id="sourceMeta" class="source-meta hidden"></div>
+      <div id="mainError" class="alert error hidden"></div>
+
+      <div class="fields-grid">
+        <div>
+          <div class="field-head">
+            <label class="label" for="sourceTitle">원문 제목</label>
+            <span id="sourceTitleCount" class="counter">0 / 100</span>
+          </div>
+          <textarea id="sourceTitle" rows="3" placeholder="원문 제목"></textarea>
+        </div>
+        <div>
+          <div class="field-head">
+            <label class="label" for="sourceDescription">원문 설명</label>
+            <button class="text-btn" data-copy-target="sourceDescription">설명 복사</button>
+          </div>
+          <textarea id="sourceDescription" rows="12" placeholder="원문 설명, 타임라인, 해시태그"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">TARGET LANGUAGES</p>
+          <h2>번역 언어 선택</h2>
+        </div>
+        <span id="selectedCount" class="pill">0개 선택</span>
+      </div>
+      <div id="translateGate" class="alert hidden"></div>
+      <div class="toolbar">
+        <button id="selectAllBtn" class="btn secondary">전체 선택</button>
+        <button id="clearAllBtn" class="btn secondary">전체 해제</button>
+        <button id="corePresetBtn" class="btn secondary">핵심 10개 언어</button>
+        <input id="languageSearch" class="language-search" type="search" placeholder="언어 검색" />
+      </div>
+      <div id="languageGrid" class="language-grid"></div>
+      <button id="translateBtn" class="btn primary wide">선택 언어 번역 시작</button>
+      <div id="progressWrap" class="progress-wrap hidden">
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+        <p id="progressText" class="hint"></p>
+      </div>
+      <div id="translateError" class="alert error hidden"></div>
+    </section>
+
+    <section id="resultsPanel" class="panel hidden">
+      <div class="section-head sticky-head">
+        <div>
+          <p class="eyebrow">TRANSLATION RESULTS</p>
+          <h2>번역 결과</h2>
+        </div>
+        <div class="export-actions">
+          <button id="exportCsvBtn" class="btn secondary">CSV 저장</button>
+          <button id="exportJsonBtn" class="btn secondary">JSON 저장</button>
+          <button id="copyAllBtn" class="btn secondary">전체 복사</button>
+        </div>
+      </div>
+      <div id="resultsList" class="results-list"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

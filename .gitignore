@@ -1,0 +1,10 @@
+node_modules/
+storyboard-app/node_modules/
+storyboard-app/dist/
+tools/storyboard/
+output/
+.gemini_key
+.env
+.env.local
+*.log
+npm-debug.log*

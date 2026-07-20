@@ -1,0 +1,22 @@
+{
+  "name": "creator-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "유튜브 추출기/번역기, 타임라인 생성기, 스토리 숏츠, 스토리보드를 한 화면에서 쓰는 로컬 크리에이터 스튜디오",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/genai": "^2.7.0",
+    "archiver": "^7.0.1",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}

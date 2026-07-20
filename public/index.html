@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creator Studio</title>
+  <link rel="stylesheet" href="/shell.css" />
+</head>
+<body>
+  <header class="shell-header">
+    <div class="shell-title">
+      <strong>Creator Studio</strong>
+      <span class="shell-subtitle">유튜브 번역기 · 타임라인 생성기 · 스토리 숏츠 · 스토리보드</span>
+    </div>
+    <div class="shell-key">
+      <span id="keyBadge" class="key-badge">키 확인 중…</span>
+      <button id="keyChangeBtn" class="key-change-btn">키 변경</button>
+    </div>
+  </header>
+
+  <div id="keyNotice" class="key-notice hidden">
+    키 없이도 기본 기능은 작동합니다. Gemini 기능(번역, 스토리·이미지 생성 등)을 쓰려면 무료 키가 필요합니다.
+    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">무료 키 발급받기 (결제 등록 불필요)</a>
+  </div>
+
+  <nav class="tabbar" role="tablist">
+    <button class="tab-btn active" data-tab="yt" role="tab" aria-selected="true">유튜브 번역기</button>
+    <button class="tab-btn" data-tab="timeline" role="tab" aria-selected="false">타임라인 생성기</button>
+    <button class="tab-btn" data-tab="shorts" role="tab" aria-selected="false">스토리 숏츠</button>
+    <button class="tab-btn" data-tab="storyboard" role="tab" aria-selected="false">스토리보드</button>
+  </nav>
+
+  <main class="tool-stage">
+    <iframe class="tool-frame active" data-tool="yt" src="/tools/yt/" title="유튜브 추출기 & 번역기"></iframe>
+    <iframe class="tool-frame" data-tool="timeline" src="/tools/timeline/" title="타임라인 생성기"></iframe>
+    <iframe class="tool-frame" data-tool="shorts" src="/tools/shorts/" title="스토리 숏츠 스튜디오"></iframe>
+    <iframe class="tool-frame" data-tool="storyboard" src="/tools/storyboard/" title="스토리보드"></iframe>
+  </main>
+
+  <dialog id="keyDialog" class="key-dialog">
+    <form method="dialog" id="keyForm">
+      <h2>Gemini API 키 설정</h2>
+      <p class="key-dialog-copy">
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>에서
+        무료로 발급받은 키를 붙여 넣으세요. 결제 등록이 필요 없습니다. 키는 이 PC의 <code>.gemini_key</code> 파일에만 저장됩니다.
+      </p>
+      <input id="keyInput" type="password" autocomplete="off" placeholder="Gemini API 키를 붙여 넣으세요" />
+      <div id="keyDialogError" class="key-dialog-error hidden"></div>
+      <div class="key-dialog-actions">
+        <button type="button" id="keyCancelBtn" class="btn secondary">취소</button>
+        <button type="button" id="keySaveBtn" class="btn primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/shell.js"></script>
+</body>
+</html>

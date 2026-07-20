@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>로컬 음악 타임라인 생성기</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --line: #d9e1ec;
+      --primary: #4f46e5;
+      --primary-dark: #3730a3;
+      --danger: #b42318;
+      --success: #087a55;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      width: min(1120px, calc(100% - 28px));
+      margin: 30px auto 60px;
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(24px, 4vw, 38px); }
+    .lead { margin: 0 0 24px; color: var(--muted); line-height: 1.6; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(16,24,40,.06);
+      margin-bottom: 18px;
+    }
+    .dropzone {
+      border: 2px dashed #aab7cc;
+      border-radius: 16px;
+      padding: 34px 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: .2s;
+      background: #fafcff;
+    }
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: #eef2ff;
+      transform: translateY(-1px);
+    }
+    .dropzone strong { display: block; font-size: 18px; margin-bottom: 8px; }
+    .dropzone span { color: var(--muted); font-size: 14px; }
+    input[type=file] { display: none; }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    label.field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input[type=text], input[type=number], select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      background: #fff;
+      font: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: 3px solid rgba(79,70,229,.14);
+      border-color: var(--primary);
+    }
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 16px;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: #eef2f6;
+      color: var(--text);
+    }
+    button.primary { background: var(--primary); color: #fff; }
+    button.primary:hover { background: var(--primary-dark); }
+    button.danger { background: #fff1f0; color: var(--danger); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    .status.error { color: var(--danger); }
+    .status.success { color: var(--success); }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 820px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: middle;
+    }
+    th { font-size: 13px; color: var(--muted); }
+    td input { min-width: 180px; }
+    .small { font-size: 12px; color: var(--muted); }
+    .order-buttons { display: flex; gap: 5px; }
+    .order-buttons button { padding: 6px 9px; }
+    .duration-input { width: 110px !important; min-width: 110px; }
+    textarea {
+      min-height: 280px;
+      resize: vertical;
+      line-height: 1.65;
+      font-family: Consolas, "D2Coding", monospace;
+    }
+    .summary {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-weight: 700;
+    }
+    .hidden { display: none; }
+    footer { color: var(--muted); font-size: 12px; line-height: 1.6; }
+    @media (max-width: 760px) {
+      .panel { padding: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>음악 타임라인 생성기</h1>
+    <p class="lead">
+      MP3와 WAV 파일을 여러 개 불러오면 재생시간을 읽어 유튜브 설명란용 누적 타임라인을 만듭니다.
+      파일은 서버로 전송되지 않고 현재 브라우저 안에서만 처리됩니다.
+    </p>
+
+    <section class="panel">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="오디오 파일 선택">
+        <strong>MP3 또는 WAV 파일을 끌어놓으세요</strong>
+        <span>클릭해서 여러 파일을 선택할 수도 있습니다.</span>
+      </div>
+      <input id="fileInput" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav" multiple />
+
+      <div class="controls">
+        <label class="field">
+          시작 시간
+          <input id="startTime" type="text" value="00:00" placeholder="00:00 또는 01:00:00" />
+        </label>
+        <label class="field">
+          곡 사이 간격(초)
+          <input id="gapSeconds" type="number" min="0" step="0.1" value="0" />
+        </label>
+        <label class="field">
+          제목 번호 제거
+          <select id="stripNumber">
+            <option value="yes" selected>예</option>
+            <option value="no">아니오</option>
+          </select>
+        </label>
+        <label class="field">
+          연번 자동 부여
+          <select id="autoNumber">
+            <option value="yes" selected>켜기 (01. 02. ...)</option>
+            <option value="no">끄기</option>
+          </select>
+        </label>
+        <label class="field">
+          출력 형식
+          <select id="timeFormat">
+            <option value="auto" selected>자동 (1시간 전 MM:SS)</option>
+            <option value="alwaysHours">항상 HH:MM:SS</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="button-row">
+        <button id="naturalSortBtn">파일명 순 정렬</button>
+        <button id="generateBtn" class="primary" disabled>타임라인 생성</button>
+        <button id="clearBtn" class="danger" disabled>전체 비우기</button>
+      </div>
+      <div id="status" class="status">아직 선택된 파일이 없습니다.</div>
+    </section>
+
+    <section id="trackPanel" class="panel hidden">
+      <div class="summary">
+        <span id="trackCount" class="badge">0곡</span>
+        <span id="totalDuration">총 재생시간 00:00</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:55px">순서</th>
+              <th>제목</th>
+              <th style="width:150px">파일 형식</th>
+              <th style="width:145px">길이</th>
+              <th style="width:130px">이동</th>
+              <th style="width:80px">삭제</th>
+            </tr>
+          </thead>
+          <tbody id="trackBody"></tbody>
+        </table>
+      </div>
+      <p class="small">길이가 잘못 인식된 경우 '길이' 칸을 MM:SS 또는 HH:MM:SS 형식으로 직접 수정할 수 있습니다. '연번 자동 부여'가 켜져 있으면 제목 앞 번호는 순서가 바뀔 때마다 자동으로 다시 매겨집니다.</p>
+    </section>
+
+    <section id="outputPanel" class="panel hidden">
+      <div class="summary">
+        <span class="badge">유튜브 설명란용</span>
+        <span>복사 후 영상 설명란에 붙여 넣으세요.</span>
+      </div>
+      <textarea id="output" spellcheck="false"></textarea>
+      <div class="button-row">
+        <button id="copyBtn" class="primary">클립보드에 복사</button>
+        <button id="downloadTxtBtn">TXT 저장</button>
+        <button id="downloadCsvBtn">CSV 저장</button>
+      </div>
+    </section>
+
+    <footer>
+      WAV 지원 범위: 일반 PCM/IEEE Float WAV 및 브라우저가 재생 가능한 WAV 파일.
+      일부 특수 코덱 WAV는 브라우저에서 길이를 읽지 못할 수 있으며, 이때 길이를 직접 입력하면 됩니다.
+    </footer>
+  </main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const fileInput = $("fileInput");
+  const dropzone = $("dropzone");
+  const trackPanel = $("trackPanel");
+  const trackBody = $("trackBody");
+  const outputPanel = $("outputPanel");
+  const output = $("output");
+  const statusEl = $("status");
+
+  let tracks = [];
+  let generatedRows = [];
+
+  function setStatus(message, type = "") {
+    statusEl.textContent = message;
+    statusEl.className = "status" + (type ? " " + type : "");
+  }
+
+  function naturalCompare(a, b) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  }
+
+  function cleanTitle(filename) {
+    let title = filename.replace(/\.(mp3|wav)$/i, "");
+    if ($("stripNumber").value === "yes") {
+      title = title
+        .replace(/^\s*[\[(]?\d{1,3}[\])]?[\s._-]+/, "")
+        .replace(/^\s*(track|곡)\s*\d{1,3}[\s._-]*/i, "");
+    }
+    return title.trim() || filename;
+  }
+
+  // Strips a leading numeric prefix such as "3-", "03.", "(1) " so the
+  // auto-numbering feature never stacks a second number on top of one that
+  // is already there (from the filename or a previous auto-numbering pass).
+  function stripLeadingNumber(text) {
+    return String(text || "")
+      .replace(/^\s*[\[(]?\d{1,3}[\])]?[\s._-]+/, "")
+      .trim();
+  }
+
+  function isAutoNumberOn() {
+    return $("autoNumber").value === "yes";
+  }
+
+  function applyAutoNumbering() {
+    const on = isAutoNumberOn();
+    const pad = tracks.length >= 100 ? 3 : 2;
+    tracks.forEach((track, index) => {
+      if (track.autoNumbered) {
+        track.title = stripLeadingNumber(track.title);
+        track.autoNumbered = false;
+      }
+      if (on) {
+        const base = stripLeadingNumber(track.title);
+        track.title = `${String(index + 1).padStart(pad, "0")}. ${base}`;
+        track.autoNumbered = true;
+      }
+    });
+  }
+
+  function formatTime(seconds, forceHours = false) {
+    seconds = Math.max(0, Math.round(Number(seconds) || 0));
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (forceHours || h > 0) {
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function parseTime(value) {
+    const text = String(value || "").trim();
+    if (!text) return NaN;
+    if (/^\d+(\.\d+)?$/.test(text)) return Number(text);
+    const parts = text.split(":").map(Number);
+    if (parts.some(Number.isNaN)) return NaN;
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return NaN;
+  }
+
+  async function wavDuration(file) {
+    const headerSize = Math.min(file.size, 2 * 1024 * 1024);
+    const buffer = await file.slice(0, headerSize).arrayBuffer();
+    const view = new DataView(buffer);
+    if (view.byteLength < 12) throw new Error("WAV 헤더가 너무 짧습니다.");
+
+    const ascii = (offset, len) => {
+      let s = "";
+      for (let i = 0; i < len && offset + i < view.byteLength; i++) {
+        s += String.fromCharCode(view.getUint8(offset + i));
+      }
+      return s;
+    };
+
+    const riff = ascii(0, 4);
+    const wave = ascii(8, 4);
+    if (!["RIFF", "RF64"].includes(riff) || wave !== "WAVE") {
+      throw new Error("일반 WAV 형식이 아닙니다.");
+    }
+
+    let offset = 12;
+    let byteRate = 0;
+    let dataSize = 0;
+
+    while (offset + 8 <= view.byteLength) {
+      const id = ascii(offset, 4);
+      const size = view.getUint32(offset + 4, true);
+      const dataOffset = offset + 8;
+
+      if (id === "fmt " && size >= 16 && dataOffset + 12 <= view.byteLength) {
+        byteRate = view.getUint32(dataOffset + 8, true);
+      } else if (id === "data") {
+        dataSize = size;
+        break;
+      }
+
+      const paddedSize = size + (size % 2);
+      offset = dataOffset + paddedSize;
+      if (offset <= dataOffset) break;
+    }
+
+    if (byteRate > 0 && dataSize > 0 && dataSize !== 0xffffffff) {
+      return dataSize / byteRate;
+    }
+    throw new Error("WAV 길이를 헤더에서 계산할 수 없습니다.");
+  }
+
+  function browserAudioDuration(file) {
+    return new Promise((resolve, reject) => {
+      const audio = document.createElement("audio");
+      const url = URL.createObjectURL(file);
+      let settled = false;
+      let timer;
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        audio.removeAttribute("src");
+        audio.load();
+        URL.revokeObjectURL(url);
+      };
+
+      const done = (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      };
+
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("브라우저가 재생시간을 읽지 못했습니다."));
+      };
+
+      audio.preload = "metadata";
+      audio.onloadedmetadata = () => {
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+          done(audio.duration);
+          return;
+        }
+
+        // 일부 오디오에서 duration이 Infinity로 표시될 때 길이 계산을 유도합니다.
+        if (audio.duration === Infinity) {
+          audio.ontimeupdate = () => {
+            audio.ontimeupdate = null;
+            if (Number.isFinite(audio.duration) && audio.duration > 0) done(audio.duration);
+          };
+          try { audio.currentTime = 1e101; } catch (_) {}
+        }
+      };
+      audio.onerror = fail;
+      timer = setTimeout(fail, 15000);
+      audio.src = url;
+    });
+  }
+
+  async function getDuration(file) {
+    const isWav = /\.wav$/i.test(file.name) || /wav/i.test(file.type);
+    if (isWav) {
+      try {
+        return await wavDuration(file);
+      } catch (_) {
+        return await browserAudioDuration(file);
+      }
+    }
+    return await browserAudioDuration(file);
+  }
+
+  async function addFiles(fileList) {
+    const selected = Array.from(fileList).filter(file => {
+      const extOk = /\.(mp3|wav)$/i.test(file.name);
+      const mimeOk = /audio\/(mpeg|mp3|wav|x-wav|wave)/i.test(file.type);
+      return extOk || mimeOk;
+    });
+
+    if (!selected.length) {
+      setStatus("MP3 또는 WAV 파일만 선택해 주세요.", "error");
+      return;
+    }
+
+    setStatus(`${selected.length}개 파일의 재생시간을 분석하고 있습니다…`);
+    $("generateBtn").disabled = true;
+
+    let failed = 0;
+    for (let i = 0; i < selected.length; i++) {
+      const file = selected[i];
+      setStatus(`[${i + 1}/${selected.length}] ${file.name} 분석 중…`);
+      let duration = 0;
+      let warning = "";
+      try {
+        duration = await getDuration(file);
+      } catch (err) {
+        failed++;
+        warning = "길이 직접 입력 필요";
+      }
+      tracks.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+        file,
+        title: cleanTitle(file.name),
+        autoNumbered: false,
+        duration,
+        warning
+      });
+      renderTracks();
+    }
+
+    setStatus(
+      failed
+        ? `${selected.length}개를 추가했습니다. ${failed}개는 길이를 직접 입력해야 합니다.`
+        : `${selected.length}개 파일을 정상적으로 추가했습니다.`,
+      failed ? "error" : "success"
+    );
+    fileInput.value = "";
+    updateButtons();
+  }
+
+  function renderTracks() {
+    applyAutoNumbering();
+    trackBody.innerHTML = "";
+    tracks.forEach((track, index) => {
+      const tr = document.createElement("tr");
+      const ext = track.file.name.split(".").pop().toUpperCase();
+
+      const orderTd = document.createElement("td");
+      orderTd.textContent = index + 1;
+
+      const titleTd = document.createElement("td");
+      const titleInput = document.createElement("input");
+      titleInput.type = "text";
+      titleInput.value = track.title;
+      titleInput.addEventListener("input", () => {
+        track.title = titleInput.value;
+        track.autoNumbered = false;
+      });
+      titleTd.appendChild(titleInput);
+      if (track.warning) {
+        const warn = document.createElement("div");
+        warn.className = "small";
+        warn.style.color = "var(--danger)";
+        warn.textContent = track.warning;
+        titleTd.appendChild(warn);
+      }
+
+      const typeTd = document.createElement("td");
+      typeTd.innerHTML = `<strong>${ext}</strong><div class="small">${track.file.name}</div>`;
+
+      const durationTd = document.createElement("td");
+      const durationInput = document.createElement("input");
+      durationInput.className = "duration-input";
+      durationInput.type = "text";
+      durationInput.value = track.duration > 0 ? formatTime(track.duration, track.duration >= 3600) : "";
+      durationInput.placeholder = "예: 03:45";
+      durationInput.addEventListener("change", () => {
+        const sec = parseTime(durationInput.value);
+        if (Number.isFinite(sec) && sec >= 0) {
+          track.duration = sec;
+          track.warning = "";
+          durationInput.value = formatTime(sec, sec >= 3600);
+          renderTracks();
+        } else {
+          alert("길이는 MM:SS 또는 HH:MM:SS 형식으로 입력해 주세요.");
+          durationInput.value = track.duration > 0 ? formatTime(track.duration, track.duration >= 3600) : "";
+        }
+      });
+      durationTd.appendChild(durationInput);
+
+      const moveTd = document.createElement("td");
+      moveTd.className = "order-buttons";
+      const up = document.createElement("button");
+      up.textContent = "▲";
+      up.title = "위로";
+      up.disabled = index === 0;
+      up.addEventListener("click", () => moveTrack(index, index - 1));
+      const down = document.createElement("button");
+      down.textContent = "▼";
+      down.title = "아래로";
+      down.disabled = index === tracks.length - 1;
+      down.addEventListener("click", () => moveTrack(index, index + 1));
+      moveTd.append(up, down);
+
+      const deleteTd = document.createElement("td");
+      const del = document.createElement("button");
+      del.className = "danger";
+      del.textContent = "삭제";
+      del.addEventListener("click", () => {
+        tracks.splice(index, 1);
+        renderTracks();
+        updateButtons();
+      });
+      deleteTd.appendChild(del);
+
+      tr.append(orderTd, titleTd, typeTd, durationTd, moveTd, deleteTd);
+      trackBody.appendChild(tr);
+    });
+
+    const total = tracks.reduce((sum, t) => sum + (Number(t.duration) || 0), 0);
+    $("trackCount").textContent = `${tracks.length}곡`;
+    $("totalDuration").textContent = `총 재생시간 ${formatTime(total, total >= 3600)}`;
+    trackPanel.classList.toggle("hidden", tracks.length === 0);
+  }
+
+  function moveTrack(from, to) {
+    if (to < 0 || to >= tracks.length) return;
+    const [item] = tracks.splice(from, 1);
+    tracks.splice(to, 0, item);
+    renderTracks();
+  }
+
+  function updateButtons() {
+    const empty = tracks.length === 0;
+    $("generateBtn").disabled = empty;
+    $("clearBtn").disabled = empty;
+    if (empty) {
+      outputPanel.classList.add("hidden");
+      setStatus("아직 선택된 파일이 없습니다.");
+    }
+  }
+
+  function generateTimeline() {
+    const invalid = tracks.filter(t => !(Number(t.duration) > 0));
+    if (invalid.length) {
+      setStatus(`재생시간이 없는 파일이 ${invalid.length}개 있습니다. 길이를 직접 입력해 주세요.`, "error");
+      return;
+    }
+
+    const start = parseTime($("startTime").value);
+    if (!Number.isFinite(start) || start < 0) {
+      setStatus("시작 시간을 00:00 또는 01:00:00 형식으로 입력해 주세요.", "error");
+      return;
+    }
+
+    const gap = Math.max(0, Number($("gapSeconds").value) || 0);
+    const alwaysHours = $("timeFormat").value === "alwaysHours";
+    let cursor = start;
+    generatedRows = [];
+
+    for (const track of tracks) {
+      generatedRows.push({
+        start: cursor,
+        timestamp: formatTime(cursor, alwaysHours),
+        title: track.title.trim() || cleanTitle(track.file.name),
+        duration: track.duration,
+        filename: track.file.name
+      });
+      cursor += track.duration + gap;
+    }
+
+    output.value = generatedRows.map(row => `${row.timestamp} ${row.title}`).join("\n");
+    outputPanel.classList.remove("hidden");
+    setStatus(`타임라인을 생성했습니다. 마지막 종료 시각은 ${formatTime(cursor - gap, true)}입니다.`, "success");
+    outputPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function copyOutput() {
+    try {
+      await navigator.clipboard.writeText(output.value);
+      setStatus("타임라인을 클립보드에 복사했습니다.", "success");
+    } catch (_) {
+      output.select();
+      document.execCommand("copy");
+      setStatus("타임라인을 클립보드에 복사했습니다.", "success");
+    }
+  }
+
+  function downloadBlob(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function csvEscape(value) {
+    const text = String(value ?? "");
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") fileInput.click();
+  });
+  fileInput.addEventListener("change", e => addFiles(e.target.files));
+
+  ["dragenter", "dragover"].forEach(type => {
+    dropzone.addEventListener(type, e => {
+      e.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(type => {
+    dropzone.addEventListener(type, e => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+    });
+  });
+  dropzone.addEventListener("drop", e => addFiles(e.dataTransfer.files));
+
+  $("stripNumber").addEventListener("change", () => {
+    tracks.forEach(t => { t.title = cleanTitle(t.file.name); t.autoNumbered = false; });
+    renderTracks();
+  });
+  $("autoNumber").addEventListener("change", () => {
+    renderTracks();
+  });
+  $("naturalSortBtn").addEventListener("click", () => {
+    tracks.sort((a, b) => naturalCompare(a.file.name, b.file.name));
+    renderTracks();
+    setStatus("파일명 기준으로 정렬했습니다.", "success");
+  });
+  $("generateBtn").addEventListener("click", generateTimeline);
+  $("clearBtn").addEventListener("click", () => {
+    tracks = [];
+    generatedRows = [];
+    output.value = "";
+    renderTracks();
+    updateButtons();
+  });
+  $("copyBtn").addEventListener("click", copyOutput);
+  $("downloadTxtBtn").addEventListener("click", () => {
+    downloadBlob("﻿" + output.value, "youtube_timeline.txt", "text/plain;charset=utf-8");
+  });
+  $("downloadCsvBtn").addEventListener("click", () => {
+    if (!generatedRows.length) generateTimeline();
+    const header = ["순서", "시작시간", "제목", "재생시간(초)", "파일명"];
+    const rows = generatedRows.map((r, i) => [
+      i + 1, r.timestamp, r.title, Math.round(r.duration * 1000) / 1000, r.filename
+    ]);
+    const csv = [header, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
+    downloadBlob("﻿" + csv, "youtube_timeline.csv", "text/csv;charset=utf-8");
+  });
+})();
+</script>
+</body>
+</html>

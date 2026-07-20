@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>스토리 쇼츠 스튜디오</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">LOCAL AI WORKFLOW</div>
+      <h1>스토리 쇼츠 스튜디오</h1>
+      <p>주제 기획부터 장면 이미지·영상 클립과 캡컷용 자료까지 한 번에</p>
+    </div>
+    <div class="top-actions">
+      <span id="apiStatus" class="status-pill">API 확인 중</span>
+      <button id="newProjectBtn" class="button ghost">새 프로젝트</button>
+    </div>
+  </header>
+
+  <nav id="steps" class="steps">
+    <button data-step="plan" class="step active"><b>1</b><span>기획</span></button>
+    <button data-step="topics" class="step"><b>2</b><span>주제 선택</span></button>
+    <button data-step="story" class="step"><b>3</b><span>각본·챕터</span></button>
+    <button data-step="assets" class="step"><b>4</b><span>이미지·영상</span></button>
+    <button data-step="export" class="step"><b>5</b><span>내보내기</span></button>
+  </nav>
+
+  <main class="shell">
+    <section id="view-plan" class="view active"></section>
+    <section id="view-topics" class="view"></section>
+    <section id="view-story" class="view"></section>
+    <section id="view-assets" class="view"></section>
+    <section id="view-export" class="view"></section>
+  </main>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <div id="loading" class="loading hidden">
+    <div class="loader"></div>
+    <strong id="loadingTitle">처리 중입니다</strong>
+    <p id="loadingText">AI 결과를 기다리고 있습니다.</p>
+  </div>
+
+  <dialog id="previewDialog" class="preview-dialog">
+    <button id="closePreviewBtn" class="dialog-close">×</button>
+    <div id="previewBody"></div>
+  </dialog>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
