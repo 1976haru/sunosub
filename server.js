@@ -7,6 +7,7 @@ import { projectsDir } from './routes/shorts.js';
 import ytRouter from './routes/yt.js';
 import shortsRouter from './routes/shorts.js';
 import storyRouter from './routes/story.js';
+import timelineRouter from './routes/timeline.js';
 
 loadKeyIntoEnv();
 
@@ -47,6 +48,7 @@ app.post('/api/key', (req, res, next) => {
 app.use('/api/yt', ytRouter);
 app.use('/api/shorts', shortsRouter);
 app.use('/api/story', storyRouter);
+app.use('/api/timeline', timelineRouter);
 
 app.use((error, _req, res, _next) => {
   console.error(error?.message || error);

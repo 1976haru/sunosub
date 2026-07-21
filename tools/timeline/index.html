@@ -160,7 +160,10 @@
     <h1>음악 타임라인 생성기</h1>
     <p class="lead">
       MP3와 WAV 파일을 여러 개 불러오면 재생시간을 읽어 유튜브 설명란용 누적 타임라인을 만듭니다.
-      파일은 서버로 전송되지 않고 현재 브라우저 안에서만 처리됩니다.
+      타임라인 생성 자체는 파일을 서버로 보내지 않고 브라우저 안에서만 처리됩니다.
+      다만 아래 "실제 파일명 변경" 기능(ZIP 다운로드, 폴더 내 실제 rename)을 쓸 때만 Creator Studio
+      서버(로컬)가 관여합니다 — ZIP은 파일 내용을 서버로 보내 다시 받는 방식이고, 폴더 rename은 파일
+      내용을 전혀 옮기지 않고 서버가 그 폴더의 실제 파일명만 바꿉니다.
     </p>
 
     <section class="panel">
@@ -233,6 +236,54 @@
       <p class="small">길이가 잘못 인식된 경우 '길이' 칸을 MM:SS 또는 HH:MM:SS 형식으로 직접 수정할 수 있습니다. '연번 자동 부여'가 켜져 있으면 제목 앞 번호는 순서가 바뀔 때마다 자동으로 다시 매겨집니다.</p>
     </section>
 
+    <section id="renamePanel" class="panel hidden">
+      <div class="summary">
+        <span class="badge">실제 파일명 변경</span>
+        <span>브라우저는 로컬 파일명을 직접 바꿀 수 없어, 아래 두 방법은 이 Creator Studio 서버가 대신 처리합니다.</span>
+      </div>
+
+      <h3 style="margin:0 0 6px;font-size:15px;">① 연번 ZIP 다운로드 (서버 설정 없이 바로 가능)</h3>
+      <p class="small">지금 목록의 순서·연번대로 파일명을 바꾼 사본을 ZIP으로 묶어 다운로드합니다. 원본 파일은 그대로 둡니다.</p>
+      <div class="button-row">
+        <button id="downloadZipBtn">📦 연번 ZIP 다운로드</button>
+      </div>
+      <div id="zipStatus" class="status"></div>
+
+      <h3 style="margin:18px 0 6px;font-size:15px;">② 실제 파일명에 연번 적용 (주력)</h3>
+      <p class="small">
+        WAV/MP3 원본이 들어있는 폴더 경로를 입력하면, 그 폴더의 실제 파일명을 지금 목록의 연번대로 바꿉니다.
+        반드시 미리보기를 확인한 뒤 [적용]을 눌러야 실행됩니다.
+      </p>
+      <div class="controls">
+        <label class="field" style="grid-column: 1 / -1">
+          대상 폴더 경로
+          <input id="folderPathInput" type="text" placeholder="예: C:\Users\user\Downloads\suno곡들" />
+        </label>
+      </div>
+      <div class="button-row">
+        <button id="scanFolderBtn" class="primary">폴더 스캔 → 미리보기</button>
+      </div>
+      <div id="renameStatus" class="status"></div>
+
+      <div id="renamePreview" class="hidden">
+        <p class="small">⚠️ 아직 아무것도 바뀌지 않았습니다. 아래 미리보기를 확인한 뒤 [적용]을 눌러야 실제 파일명이 바뀝니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="width:90px">상태</th><th>변경 전</th><th>변경 후</th></tr></thead>
+            <tbody id="renamePreviewBody"></tbody>
+          </table>
+        </div>
+        <div class="button-row">
+          <button id="applyRenameBtn" class="primary">✅ 적용 (실제 파일명 변경)</button>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="undoRenameBtn" class="danger">↩️ 되돌리기 (가장 최근 적용 취소)</button>
+      </div>
+      <div id="renameReport"></div>
+    </section>
+
     <section id="outputPanel" class="panel hidden">
       <div class="summary">
         <span class="badge">유튜브 설명란용</span>
@@ -262,9 +313,19 @@
   const outputPanel = $("outputPanel");
   const output = $("output");
   const statusEl = $("status");
+  const renamePanel = $("renamePanel");
+  const folderPathInput = $("folderPathInput");
+  const renamePreview = $("renamePreview");
+  const renamePreviewBody = $("renamePreviewBody");
+  const renameReport = $("renameReport");
 
   let tracks = [];
   let generatedRows = [];
+  // TASK CS-v1.2 — the confirmed rename plan from the most recent
+  // "폴더 스캔" — [적용] only ever executes exactly what was previewed,
+  // never a freshly recomputed plan, so what the user reviewed is exactly
+  // what runs.
+  let currentRenamePlan = null;
 
   function setStatus(message, type = "") {
     statusEl.textContent = message;
@@ -292,6 +353,209 @@
     return String(text || "")
       .replace(/^\s*[\[(]?\d{1,3}[\])]?[\s._-]+/, "")
       .trim();
+  }
+
+  // TASK CS-v1.2 — byte-identical to routes/timeline.js's own copy, so a
+  // real folder filename and this screen's on-screen title compare on the
+  // exact same basis. Keep both copies in sync if this regex ever changes;
+  // duplicated because this is a static single-file page with no shared
+  // module system with the server.
+  function normalizeForMatch(text) {
+    return stripLeadingNumber(text).normalize("NFC").toLowerCase();
+  }
+
+  function baseNameNoExt(filename) {
+    return String(filename || "").replace(/\.(mp3|wav)$/i, "");
+  }
+
+  function sanitizeForFilename(text) {
+    return String(text || "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").trim();
+  }
+
+  /**
+   * Matches each timeline track's ORIGINAL loaded filename (track.file.name
+   * — not the possibly hand-edited title, so a manual title edit never
+   * breaks the match) against the real folder's filenames. A folder file
+   * can only be claimed by one track. Returns the from/to pairs plus
+   * whatever didn't match on either side, so the preview can show all three
+   * outcomes explicitly per the "매칭 안 되는 파일은... 건드리지 않음" rule.
+   */
+  function computeRenamePlan(trackList, folderFiles) {
+    const usedFolderFiles = new Set();
+    const matched = [];
+    const unmatchedTracks = [];
+
+    for (const track of trackList) {
+      const trackKey = normalizeForMatch(baseNameNoExt(track.file.name));
+      const folderMatch = folderFiles.find(
+        (f) => !usedFolderFiles.has(f) && normalizeForMatch(baseNameNoExt(f)) === trackKey
+      );
+      if (!folderMatch) {
+        unmatchedTracks.push(track);
+        continue;
+      }
+      usedFolderFiles.add(folderMatch);
+      const extMatch = folderMatch.match(/\.(mp3|wav)$/i);
+      const ext = extMatch ? extMatch[0] : "";
+      const to = `${sanitizeForFilename(track.title)}${ext}`;
+      matched.push({ from: folderMatch, to, trackTitle: track.title });
+    }
+
+    const unmatchedFolderFiles = folderFiles.filter((f) => !usedFolderFiles.has(f));
+    return { matched, unmatchedTracks, unmatchedFolderFiles };
+  }
+
+  function renderRenamePreview(plan) {
+    renamePreviewBody.innerHTML = "";
+    const addRow = (statusText, statusClass, from, to) => {
+      const tr = document.createElement("tr");
+      const statusTd = document.createElement("td");
+      statusTd.innerHTML = `<span class="small" style="color:var(${statusClass})">${statusText}</span>`;
+      const fromTd = document.createElement("td");
+      fromTd.textContent = from;
+      const toTd = document.createElement("td");
+      toTd.textContent = to;
+      tr.append(statusTd, fromTd, toTd);
+      renamePreviewBody.appendChild(tr);
+    };
+
+    plan.matched.forEach((entry) => {
+      const unchanged = entry.from === entry.to;
+      addRow(unchanged ? "이미 적용됨" : "변경 예정", unchanged ? "--muted" : "--primary", entry.from, entry.to);
+    });
+    plan.unmatchedFolderFiles.forEach((name) => {
+      addRow("타임라인에 없음 (건드리지 않음)", "--muted", name, "-");
+    });
+    plan.unmatchedTracks.forEach((track) => {
+      addRow("폴더에 없음 (건드리지 않음)", "--danger", track.file.name, "-");
+    });
+
+    renamePreview.classList.remove("hidden");
+  }
+
+  async function scanFolderAndPreview() {
+    const folderPath = folderPathInput.value.trim();
+    if (!folderPath) {
+      setRenameStatus("폴더 경로를 입력해 주세요.", "error");
+      return;
+    }
+    if (!tracks.length) {
+      setRenameStatus("먼저 곡을 추가해 주세요.", "error");
+      return;
+    }
+    setRenameStatus("폴더를 확인하는 중…");
+    renameReport.textContent = "";
+    try {
+      const res = await fetch(`/api/timeline/list-folder?folderPath=${encodeURIComponent(folderPath)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "폴더를 확인하지 못했습니다.");
+      const plan = computeRenamePlan(tracks, data.files);
+      currentRenamePlan = plan;
+      renderRenamePreview(plan);
+      const changing = plan.matched.filter((e) => e.from !== e.to).length;
+      setRenameStatus(
+        `미리보기: ${plan.matched.length}곡 매칭 (${changing}곡 변경 예정), 타임라인에 없는 폴더 파일 ${plan.unmatchedFolderFiles.length}개, 폴더에 없는 곡 ${plan.unmatchedTracks.length}개.`,
+        "success"
+      );
+    } catch (err) {
+      setRenameStatus(err.message, "error");
+      renamePreview.classList.add("hidden");
+      currentRenamePlan = null;
+    }
+  }
+
+  async function applyRenamePlan() {
+    if (!currentRenamePlan || !currentRenamePlan.matched.length) {
+      setRenameStatus("먼저 폴더 스캔으로 미리보기를 만들어 주세요.", "error");
+      return;
+    }
+    const folderPath = folderPathInput.value.trim();
+    setRenameStatus("적용하는 중…");
+    try {
+      const res = await fetch("/api/timeline/apply-rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folderPath,
+          operations: currentRenamePlan.matched.map((e) => ({ from: e.from, to: e.to }))
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "적용하지 못했습니다.");
+      renameReport.innerHTML = `<p class="status success">완료: 변경 ${data.renamed}개 · 건너뜀 ${data.skipped}개 · 실패 ${data.failed}개</p>` +
+        (data.failed
+          ? `<ul class="small">${data.results.filter((r) => r.status === "failed").map((r) => `<li>${r.from} → ${r.to}: ${r.reason}</li>`).join("")}</ul>`
+          : "");
+      setRenameStatus("적용을 마쳤습니다. 되돌리려면 아래 [되돌리기]를 누르세요.", "success");
+      await scanFolderAndPreview();
+    } catch (err) {
+      setRenameStatus(err.message, "error");
+    }
+  }
+
+  async function undoRenamePlan() {
+    const folderPath = folderPathInput.value.trim();
+    if (!folderPath) {
+      setRenameStatus("폴더 경로를 입력해 주세요.", "error");
+      return;
+    }
+    setRenameStatus("되돌리는 중…");
+    try {
+      const res = await fetch("/api/timeline/undo-rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "되돌리지 못했습니다.");
+      renameReport.innerHTML = `<p class="status success">되돌리기 완료: 복원 ${data.restored}개 · 실패 ${data.failed}개</p>`;
+      setRenameStatus("가장 최근 적용을 되돌렸습니다.", "success");
+      currentRenamePlan = null;
+      renamePreview.classList.add("hidden");
+    } catch (err) {
+      setRenameStatus(err.message, "error");
+    }
+  }
+
+  async function downloadZip() {
+    if (!tracks.length) {
+      setStatus("먼저 곡을 추가해 주세요.", "error");
+      return;
+    }
+    const zipStatus = $("zipStatus");
+    zipStatus.textContent = "ZIP을 만드는 중… (파일이 클수록 시간이 걸립니다)";
+    zipStatus.className = "status";
+    try {
+      const form = new FormData();
+      tracks.forEach((track) => form.append("files", track.file, track.file.name));
+      form.append("names", JSON.stringify(tracks.map((t) => `${sanitizeForFilename(t.title)}${(t.file.name.match(/\.(mp3|wav)$/i) || [""])[0]}`)));
+
+      const res = await fetch("/api/timeline/zip", { method: "POST", body: form });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "ZIP 생성에 실패했습니다.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "suno-timeline.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      zipStatus.textContent = "다운로드를 시작했습니다. 압축을 풀어서 사용하세요.";
+      zipStatus.className = "status success";
+    } catch (err) {
+      zipStatus.textContent = err.message;
+      zipStatus.className = "status error";
+    }
+  }
+
+  function setRenameStatus(message, type = "") {
+    const el = $("renameStatus");
+    el.textContent = message;
+    el.className = "status" + (type ? " " + type : "");
   }
 
   function isAutoNumberOn() {
@@ -576,6 +840,11 @@
     $("trackCount").textContent = `${tracks.length}곡`;
     $("totalDuration").textContent = `총 재생시간 ${formatTime(total, total >= 3600)}`;
     trackPanel.classList.toggle("hidden", tracks.length === 0);
+    renamePanel.classList.toggle("hidden", tracks.length === 0);
+    // The list/order changed, so any previous preview no longer matches
+    // reality — force a fresh "폴더 스캔" before allowing another [적용].
+    currentRenamePlan = null;
+    renamePreview.classList.add("hidden");
   }
 
   function moveTrack(from, to) {
@@ -711,6 +980,25 @@
     const csv = [header, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
     downloadBlob("﻿" + csv, "youtube_timeline.csv", "text/csv;charset=utf-8");
   });
+
+  // TASK CS-v1.2 — real-filename rename (server-backed) + ZIP fallback.
+  $("downloadZipBtn").addEventListener("click", () => void downloadZip());
+  $("scanFolderBtn").addEventListener("click", () => void scanFolderAndPreview());
+  $("applyRenameBtn").addEventListener("click", () => void applyRenamePlan());
+  $("undoRenameBtn").addEventListener("click", () => void undoRenamePlan());
+
+  fetch("/api/timeline/last-folder")
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.folderPath) folderPathInput.value = data.folderPath;
+    })
+    .catch(() => {
+      // This tool must still work as a pure static page (e.g. opened
+      // directly from disk without the Creator Studio server running) —
+      // the rename/zip buttons simply won't work in that case, which
+      // scanFolderAndPreview()/downloadZip()'s own try/catch already
+      // surfaces as a normal error message, not a crash.
+    });
 })();
 </script>
 </body>

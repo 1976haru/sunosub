@@ -4,6 +4,7 @@ storyboard-app/dist/
 tools/storyboard/
 output/
 .gemini_key
+.timeline-settings.json
 .env
 .env.local
 *.log
