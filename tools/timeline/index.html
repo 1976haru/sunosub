@@ -183,6 +183,16 @@
           <input id="gapSeconds" type="number" min="0" step="0.1" value="0" />
         </label>
         <label class="field">
+          반복 횟수
+          <select id="repeatCount">
+            <option value="1" selected>1회 (반복 없음)</option>
+            <option value="2">2회</option>
+            <option value="3">3회</option>
+            <option value="4">4회</option>
+            <option value="5">5회</option>
+          </select>
+        </label>
+        <label class="field">
           제목 번호 제거
           <select id="stripNumber">
             <option value="yes" selected>예</option>
@@ -836,9 +846,8 @@
       trackBody.appendChild(tr);
     });
 
-    const total = tracks.reduce((sum, t) => sum + (Number(t.duration) || 0), 0);
     $("trackCount").textContent = `${tracks.length}곡`;
-    $("totalDuration").textContent = `총 재생시간 ${formatTime(total, total >= 3600)}`;
+    updateTotalDurationDisplay();
     trackPanel.classList.toggle("hidden", tracks.length === 0);
     renamePanel.classList.toggle("hidden", tracks.length === 0);
     // The list/order changed, so any previous preview no longer matches
@@ -864,6 +873,53 @@
     }
   }
 
+  function getRepeatCount() {
+    return Math.max(1, Math.min(5, Number($("repeatCount").value) || 1));
+  }
+
+  /**
+   * TASK CS-v1.3 — "전체 묶음 반복" (ABC-ABC), never per-song repetition:
+   * the same track list is walked `repeatCount` times back-to-back, with
+   * the same gap applied between every consecutive track including the
+   * boundary between one round's last track and the next round's first —
+   * that boundary needs no special-case logic since the cursor never
+   * resets between rounds. Titles repeat verbatim every round (user
+   * decision — no round marker, no renumbering across rounds); this is
+   * also the single source of truth generateTimeline() and
+   * updateTotalDurationDisplay() both call, so the on-screen "총 재생시간"
+   * badge and the actual generated timeline can never drift apart.
+   */
+  function buildRepeatedRows(trackList, startCursor, gap, repeatCount) {
+    let cursor = startCursor;
+    const rows = [];
+    for (let round = 0; round < repeatCount; round++) {
+      for (const track of trackList) {
+        rows.push({
+          start: cursor,
+          title: track.title.trim() || cleanTitle(track.file.name),
+          duration: track.duration,
+          filename: track.file.name,
+          round: round + 1
+        });
+        cursor += (Number(track.duration) || 0) + gap;
+      }
+    }
+    return { rows, endCursor: cursor };
+  }
+
+  function updateTotalDurationDisplay() {
+    const singleRoundTotal = tracks.reduce((sum, t) => sum + (Number(t.duration) || 0), 0);
+    const gap = Math.max(0, Number($("gapSeconds").value) || 0);
+    const repeatCount = getRepeatCount();
+    const { endCursor } = buildRepeatedRows(tracks, 0, gap, repeatCount);
+    // endCursor includes one trailing gap past the very last track — that
+    // gap never actually plays, so it doesn't belong in a "total length".
+    const accumulatedTotal = Math.max(0, endCursor - gap);
+    $("totalDuration").textContent = repeatCount > 1
+      ? `총 재생시간 ${formatTime(accumulatedTotal, accumulatedTotal >= 3600)} (${formatTime(singleRoundTotal, singleRoundTotal >= 3600)} × ${repeatCount}회)`
+      : `총 재생시간 ${formatTime(accumulatedTotal, accumulatedTotal >= 3600)}`;
+  }
+
   function generateTimeline() {
     const invalid = tracks.filter(t => !(Number(t.duration) > 0));
     if (invalid.length) {
@@ -878,24 +934,19 @@
     }
 
     const gap = Math.max(0, Number($("gapSeconds").value) || 0);
+    const repeatCount = getRepeatCount();
     const alwaysHours = $("timeFormat").value === "alwaysHours";
-    let cursor = start;
-    generatedRows = [];
-
-    for (const track of tracks) {
-      generatedRows.push({
-        start: cursor,
-        timestamp: formatTime(cursor, alwaysHours),
-        title: track.title.trim() || cleanTitle(track.file.name),
-        duration: track.duration,
-        filename: track.file.name
-      });
-      cursor += track.duration + gap;
-    }
+    const { rows, endCursor } = buildRepeatedRows(tracks, start, gap, repeatCount);
+    generatedRows = rows.map(row => ({ ...row, timestamp: formatTime(row.start, alwaysHours) }));
 
     output.value = generatedRows.map(row => `${row.timestamp} ${row.title}`).join("\n");
     outputPanel.classList.remove("hidden");
-    setStatus(`타임라인을 생성했습니다. 마지막 종료 시각은 ${formatTime(cursor - gap, true)}입니다.`, "success");
+    setStatus(
+      repeatCount > 1
+        ? `타임라인을 생성했습니다 (전체 ${tracks.length}곡 × ${repeatCount}회 반복). 마지막 종료 시각은 ${formatTime(endCursor - gap, true)}입니다.`
+        : `타임라인을 생성했습니다. 마지막 종료 시각은 ${formatTime(endCursor - gap, true)}입니다.`,
+      "success"
+    );
     outputPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -954,6 +1005,10 @@
   $("autoNumber").addEventListener("change", () => {
     renderTracks();
   });
+  // TASK CS-v1.3 — repeat count/gap affect the "총 재생시간" badge even
+  // before the user clicks "타임라인 생성", so these update it live.
+  $("repeatCount").addEventListener("change", updateTotalDurationDisplay);
+  $("gapSeconds").addEventListener("input", updateTotalDurationDisplay);
   $("naturalSortBtn").addEventListener("click", () => {
     tracks.sort((a, b) => naturalCompare(a.file.name, b.file.name));
     renderTracks();
