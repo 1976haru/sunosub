@@ -4,10 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadKeyIntoEnv, writeKeyFile, currentKey } from './lib/keyStore.js';
 import { projectsDir } from './routes/shorts.js';
+import { filesDir as thumbnailFilesDir } from './routes/thumbnail.js';
 import ytRouter from './routes/yt.js';
 import shortsRouter from './routes/shorts.js';
 import storyRouter from './routes/story.js';
 import timelineRouter from './routes/timeline.js';
+import thumbnailRouter from './routes/thumbnail.js';
 
 loadKeyIntoEnv();
 
@@ -26,9 +28,11 @@ app.use('/tools/yt', express.static(path.join(__dirname, 'tools', 'yt')));
 app.use('/tools/timeline', express.static(path.join(__dirname, 'tools', 'timeline')));
 app.use('/tools/shorts', express.static(path.join(__dirname, 'tools', 'shorts')));
 app.use('/tools/storyboard', express.static(path.join(__dirname, 'tools', 'storyboard')));
+app.use('/tools/thumbnail', express.static(path.join(__dirname, 'tools', 'thumbnail')));
 
 // Story shorts generates images/videos on disk; serve them under its own namespace.
 app.use('/api/shorts/files', express.static(projectsDir, { fallthrough: false }));
+app.use('/api/thumbnail/files', express.static(thumbnailFilesDir, { fallthrough: false }));
 
 app.get('/api/status', (_req, res) => {
   res.json({ ok: true, geminiConfigured: Boolean(currentKey()), port: PORT });
@@ -49,6 +53,7 @@ app.use('/api/yt', ytRouter);
 app.use('/api/shorts', shortsRouter);
 app.use('/api/story', storyRouter);
 app.use('/api/timeline', timelineRouter);
+app.use('/api/thumbnail', thumbnailRouter);
 
 app.use((error, _req, res, _next) => {
   console.error(error?.message || error);

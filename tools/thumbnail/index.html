@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>썸네일·커버 스튜디오</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gowun+Dodum&family=Jua&family=Nanum+Pen+Script&family=Yeon+Sung&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">THUMBNAIL &amp; COVER STUDIO</div>
+      <h1>🖼 썸네일·커버 스튜디오</h1>
+      <p>카피 후보 생성 → 채널 브랜드 템플릿 → 배경 이미지 → 합성·다운로드</p>
+    </div>
+    <div class="top-actions">
+      <span id="apiStatus" class="status-pill">API 확인 중</span>
+    </div>
+  </header>
+
+  <nav id="steps" class="steps">
+    <button data-step="brand" class="step active"><b>1</b><span>브랜드 템플릿</span></button>
+    <button data-step="copy" class="step"><b>2</b><span>카피 후보</span></button>
+    <button data-step="background" class="step"><b>3</b><span>배경 이미지</span></button>
+    <button data-step="compose" class="step"><b>4</b><span>합성·다운로드</span></button>
+  </nav>
+
+  <main class="shell">
+    <section id="view-brand" class="view active"></section>
+    <section id="view-copy" class="view"></section>
+    <section id="view-background" class="view"></section>
+    <section id="view-compose" class="view"></section>
+  </main>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <div id="loading" class="loading hidden">
+    <div class="loader"></div>
+    <strong id="loadingTitle">처리 중입니다</strong>
+    <p id="loadingText">결과를 기다리고 있습니다.</p>
+  </div>
+
+  <dialog id="ownershipDialog" class="ownership-dialog">
+    <h2>업로드 이미지 확인</h2>
+    <p>업로드하는 사진은 본인이 소유했거나 사용 라이선스를 보유한 이미지여야 합니다.
+      실존 인물·유명인 사진, 타인의 저작물, 브랜드 이미지는 사용할 수 없습니다.</p>
+    <div class="key-dialog-actions">
+      <button type="button" id="ownershipCancelBtn" class="button ghost">취소</button>
+      <button type="button" id="ownershipConfirmBtn" class="button primary">확인했습니다, 계속</button>
+    </div>
+  </dialog>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

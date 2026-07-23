@@ -1,8 +1,8 @@
 # Creator Studio
 
-유튜브 추출기·번역기, 음악 타임라인 생성기, 스토리 숏츠 스튜디오, 스토리보드(챕터 생성기)
-4개 도구를 하나의 로컬 앱으로 통합했습니다. Express 서버 1개(포트 5300)가 전부 서빙하며,
-Gemini **무료 등급 API 키** 하나로 4개 도구가 모두 동작합니다.
+유튜브 추출기·번역기, 음악 타임라인 생성기, 스토리 숏츠 스튜디오, 스토리보드(챕터 생성기),
+썸네일·커버 스튜디오 5개 도구를 하나의 로컬 앱으로 통합했습니다. Express 서버 1개(포트 5300)가
+전부 서빙하며, Gemini **무료 등급 API 키** 하나로 5개 도구가 모두 동작합니다.
 
 ## 처음 실행하는 법
 
@@ -29,22 +29,27 @@ Gemini **무료 등급 API 키** 하나로 4개 도구가 모두 동작합니다
   무관하게 이 Express 서버 자체가 켜져 있어야 동작합니다 — `tools/timeline/index.html`을 서버 없이
   파일로 직접 열면 타임라인 생성은 되지만 이 두 기능은 작동하지 않습니다.
 - **스토리 숏츠 / 스토리보드**: 화면은 뜨지만 AI 생성(주제·각본·이미지·영상) 기능은 키가 있어야 동작합니다.
+- **썸네일·커버 스튜디오**: 카피 후보 생성은 키 없이도 로컬 템플릿 뱅크로 동작합니다. Gemini 배경 생성과
+  업로드 이미지의 기존 텍스트 제거(인페인팅)만 키가 필요합니다. 채널 브랜드 템플릿 설정·합성·PNG 다운로드는
+  전부 브라우저(Canvas)에서 이뤄지므로 키와 무관하게 항상 동작합니다.
 
 ## 폴더 구조
 
 ```
 creator-studio/
   server.js              Express 서버 (포트 5300, 전체 라우팅)
-  lib/                    키 저장소, Gemini 클라이언트, 재시도(backoff), 무키 유튜브 파서
-  routes/                 /api/yt, /api/shorts, /api/story, /api/timeline 라우터
+  lib/                    키 저장소, Gemini 클라이언트, 재시도(backoff), 무키 유튜브 파서, 썸네일 카피 뱅크
+  routes/                 /api/yt, /api/shorts, /api/story, /api/timeline, /api/thumbnail 라우터
   public/                 앱 셸(탭 UI, 키 배지, 키 변경 모달)
   tools/
     yt/                   유튜브 추출기·번역기 (정적, iframe으로 로드)
     timeline/              타임라인 생성기 (정적 단일 HTML, iframe으로 로드)
     shorts/                스토리 숏츠 스튜디오 (정적, iframe으로 로드)
     storyboard/             스토리보드 빌드 결과물 (vite build 산출물, 자동 생성됨)
+    thumbnail/              썸네일·커버 스튜디오 (정적, iframe으로 로드, IndexedDB로 채널 템플릿 저장)
   storyboard-app/          스토리보드 React 소스 (vite, base:'/tools/storyboard/')
   output/projects/         스토리 숏츠가 생성한 이미지·영상·프로젝트 파일 저장 위치
+  output/thumbnails/       썸네일·커버 스튜디오가 생성/업로드한 배경 이미지 저장 위치
   start-creator-studio.bat 실행 스크립트 (ASCII 전용)
   .gemini_key              저장된 Gemini 키 (git에 커밋되지 않음)
   .timeline-settings.json  타임라인의 "최근 사용 폴더" 경로 (git에 커밋되지 않음)
@@ -52,10 +57,24 @@ creator-studio/
 
 ## 아키텍처 메모
 
-- 4개 탭은 모두 `<iframe>`으로 격리되어 있고, 셸 로드 시 4개 모두 한 번씩 로드됩니다.
+- 5개 탭은 모두 `<iframe>`으로 격리되어 있고, 셸 로드 시 5개 모두 한 번씩 로드됩니다.
   탭 전환은 `display` 토글만 하므로 iframe이 다시 로드되지 않고 입력 상태가 유지됩니다.
-- API는 도구별로 네임스페이스가 나뉩니다: `/api/yt/*`, `/api/shorts/*`, `/api/story/*`, `/api/timeline/*`.
-  키 상태 확인/변경은 공통 엔드포인트 `/api/status`, `/api/key`를 씁니다.
+- API는 도구별로 네임스페이스가 나뉩니다: `/api/yt/*`, `/api/shorts/*`, `/api/story/*`, `/api/timeline/*`,
+  `/api/thumbnail/*`. 키 상태 확인/변경은 공통 엔드포인트 `/api/status`, `/api/key`를 씁니다.
+- **썸네일·커버 스튜디오 (CS-v1.4, `routes/thumbnail.js` + `tools/thumbnail/`)**: 카피 후보 생성
+  (`POST /api/thumbnail/copy`)은 Gemini 키가 있으면 JSON 스키마 응답으로 텍스트를 생성하고, 없으면
+  `lib/thumbnailCopyBank.js`의 로컬 템플릿 뱅크로 자동 폴백합니다(키 없이도 후보가 항상 나옴). 스타일
+  태그별 문구는 줄바꿈이 포함된 문자열 하나가 아니라 `lines` 배열로 주고받습니다 — 모델이 JSON 문자열
+  안에 실제 개행 문자를 넣으면 `JSON.parse`가 깨지는 문제를 프롬프트/스키마 단계에서 원천 차단하기
+  위함입니다. 채널 브랜드 템플릿(폰트·색·그림자·테두리·위치·배지)은 서버가 아니라 브라우저
+  IndexedDB(`tools/thumbnail/idb.js`, DB `creator-studio-thumbnail`)에 채널명 키로 저장되어, 한 번
+  잠그면 이후 모든 제작에서 배경과 문구만 바뀝니다. 실제 이미지 합성(배경+텍스트 오버레이+배지, 16:9
+  썸네일과 1:1 커버 별도 생성, PNG `toBlob` 다운로드)은 전부 `tools/thumbnail/canvas.js`의 `<canvas>`
+  로직으로 브라우저에서 처리하고 서버를 거치지 않습니다. 서버(`routes/thumbnail.js`)는 배경용 Gemini
+  이미지 생성(`/generate-background`)과 업로드 이미지의 기존 텍스트 인페인팅+가로 확장
+  (`/remove-text`)만 담당하며, 두 경로 모두 실존 인물·브랜드 IP·기존 작품 재현·텍스트/워터마크 금지
+  문구를 프롬프트에 항상 덧붙입니다. 업로드(`/upload`)는 `ownershipConfirmed=true`가 없으면 서버가
+  거부해, 클라이언트의 1회 소유권 확인 모달을 우회할 수 없게 합니다.
 - **타임라인의 실제 파일명 변경 (CS-v1.2, `routes/timeline.js`)**: 브라우저는 로컬 파일의 진짜 경로나
   파일명을 바꿀 권한이 없어서, CS-v1.1까지는 화면 표시용 제목 문자열에만 연번이 붙고 실제 WAV/MP3
   파일명은 그대로였습니다. 이 서버가 대신 두 가지 방법을 제공합니다:
@@ -82,16 +101,40 @@ creator-studio/
 항목을 구분했습니다.
 
 실측 완료:
-- [x] 서버 기동 → 4개 탭(`/tools/yt/`, `/tools/timeline/`, `/tools/shorts/`, `/tools/storyboard/`) 모두 200 응답
-- [x] `/api/status`, `/api/yt/status`, `/api/shorts/status`, `/api/story/status`가 키 상태를 정확히 반영
+- [x] 서버 기동 → 5개 탭(`/tools/yt/`, `/tools/timeline/`, `/tools/shorts/`, `/tools/storyboard/`,
+      `/tools/thumbnail/`) 모두 200 응답
+- [x] `/api/status`, `/api/yt/status`, `/api/shorts/status`, `/api/story/status`, `/api/thumbnail/status`가
+      키 상태를 정확히 반영
 - [x] `/api/key`로 키 저장 → 상태가 즉시 "연결됨"으로 바뀌고 `.gemini_key` 파일에 저장됨을 확인
 - [x] [번역기] 키 없음: 실제 유튜브 URL로 비공식 페이지 파싱 추출 성공(`source` 필드로 방식 표시,
       실제 공개 영상으로 테스트해 제목·전체 설명을 정상적으로 가져옴), 번역 요청 시 `needsKey:true`로 차단
 - [x] 잘못된 키로 번역 요청 시 서버가 죽지 않고 Gemini의 오류를 그대로 감싸 반환(키 값 자체는 노출 안 함)
 - [x] storyboard-app `tsc --noEmit` 통과, `vite build` 성공, 빌드 산출물에 `process.env.API_KEY`나
       `GoogleGenAI` 문자열이 없고 `/api/story/topics`, `/api/story/chapters` 호출만 남아있음을 확인
-- [x] 모든 서버 파일 `node --check` 통과
+- [x] 모든 서버 파일 `node --check` 통과 (`server.js`, `lib/thumbnailCopyBank.js`, `routes/thumbnail.js`
+      포함)
 - [x] `start-creator-studio.bat`이 순수 ASCII인지 바이트 단위로 확인
+- [x] (CS-v1.4) `tools/thumbnail/{app.js,canvas.js,idb.js}` `node --check` 통과(구문 검증 — 브라우저
+      전용 API는 파싱만 확인)
+- [x] (CS-v1.4) `lib/thumbnailCopyBank.js`의 `generateFallbackCandidates`를 직접 실행: 컨셉 문구로 5개
+      스타일 태그 후보를 생성 → 방금 생성한 문구를 `avoid`로 넘겨 재생성했을 때 겹침 0건 확인,
+      `validateCopyText`가 금지어("충격적인 노래\n소름 돋는다")와 URL 포함 문구는 거부하고 정상 문구는
+      통과시킴을 확인
+- [x] (CS-v1.4) 실제 Gemini 키로 `POST /api/thumbnail/copy` 호출: 초기 스키마(문자열 안에 `\n` 포함)는
+      모델이 실제 개행 문자를 반환해 `JSON.parse`가 깨지는 것을 실측으로 발견 → 스키마를 `lines` 배열로
+      바꿔 재검증, 5개 스타일 태그 후보가 모두 정상 파싱됨을 확인
+- [x] (CS-v1.4) `POST /api/thumbnail/upload`: `ownershipConfirmed=false`(또는 누락) 시 서버가 거부,
+      `true`일 때만 실제 파일이 저장되고 `/api/thumbnail/files/...`로 재조회 가능함을 curl로 확인
+- [x] (CS-v1.4) `generate-background`/`remove-text`를 프롬프트·이미지 없이 호출 시 서버가 죽지 않고
+      한국어 검증 오류를 반환함을 확인
+- [x] (CS-v1.4) 브랜드 템플릿 잠금 로직 코드 리뷰 중 실제 버그 2건을 발견해 수정: (1) "이번만 다르게"
+      켜짐 상태에서 잠금 해제/이번만 다르게 버튼에 클릭 리스너가 붙지 않아 죽은 버튼이 되는 문제,
+      (2) 잠금 해제 후 재저장 시 `overrideOnce` 플래그가 초기화되지 않아 다시 잠가도 편집 가능 상태로
+      남는 문제. 아울러 합성 단계가 최초 로드 시 빈 문구에 대해 검증 오류 토스트를 즉시 띄우던 문제도
+      silent 초기 렌더로 수정
+- [x] (CS-v1.4) 브라우저를 직접 조작한 실측은 아님(이 세션에는 브라우저 자동화 도구가 연결되지 않음) —
+      위 항목들은 서버 curl 호출, Node로 직접 실행한 모듈 단위 테스트, 코드 리뷰로 검증한 것이며 아래
+      "사용자 확인 필요" 목록에 실제 화면 조작 확인이 별도로 남아 있음
 - [x] (CS-v1.3) 반복 횟수: 실제 프로덕션 스크립트(`tools/timeline/index.html`)의 `formatTime`/
       `buildRepeatedRows`/`getRepeatCount`를 Node에 추출해(DOM 스텁) 직접 실행한 실측 — 18곡(합계
       57:06으로 테스트) × 3회 반복 시 마지막(54번째) 곡 시작 시각이 손계산과 정확히 일치, 회차 경계
@@ -125,6 +168,20 @@ creator-studio/
 - [ ] [숏츠] 주제·각본·이미지·Veo 영상 생성 실사용(비용·시간 소요)
 - [ ] [스토리보드] 실제 주제·챕터 생성 결과물 품질
 - [ ] 탭 전환 시 iframe 재로드 없이 입력 상태가 유지되는지 브라우저에서 육안 확인
+- [ ] (CS-v1.4) [썸네일·커버] 브랜드 템플릿 1회 설정·저장·잠금 후, 화면에서 실제로 프리셋/폰트/색/
+      그림자/테두리/위치/배지 입력 필드가 비활성화되는지, "이번만 다르게" 토글과 "설정 잠금 해제"
+      버튼이 화면 클릭으로 정상 동작하는지 육안 확인(코드 리뷰로 로직 버그는 수정했으나 실제 클릭
+      확인은 아직 없음)
+- [ ] (CS-v1.4) [썸네일·커버] 서로 다른 배경 3개에 같은 잠긴 템플릿을 적용했을 때 폰트·색·배지 위치가
+      동일하게 유지되는지 화면에서 확인
+- [ ] (CS-v1.4) [썸네일·커버] 업로드 이미지의 "기존 텍스트 제거" 체크 후 실제 Gemini 인페인팅 결과물
+      품질(텍스트가 자연스럽게 지워지는지, 가로 확장 시 배경이 이어지는지)
+- [ ] (CS-v1.4) [썸네일·커버] Gemini 배경 생성, 다운로드된 썸네일(1280×720 이상)/커버(3000×3000) PNG의
+      실제 치수와 파일이 정상 열리는지
+- [ ] (CS-v1.4) [썸네일·커버] Google Fonts(Black Han Sans 등 6종)가 실제 네트워크 환경에서 캔버스에
+      올바르게 렌더링되는지(폰트 로드 실패 시 폴백 폰트로만 보이지 않는지)
+- [ ] (CS-v1.4) [썸네일·커버] 세트 단위 일괄 생성 시 브라우저가 여러 PNG 연속 다운로드를 차단하지
+      않는지(브라우저별 다운로드 팝업 차단 정책 확인 필요)
 
 ## 알려진 한계
 
