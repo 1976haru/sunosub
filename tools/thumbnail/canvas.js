@@ -60,6 +60,8 @@ export function drawBackgroundCover(ctx, image, width, height, fillColor = '#111
   ctx.fillStyle = fillColor;
   ctx.fillRect(0, 0, width, height);
   if (!image) return;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   const scale = Math.max(width / image.width, height / image.height);
   const drawWidth = image.width * scale;
   const drawHeight = image.height * scale;

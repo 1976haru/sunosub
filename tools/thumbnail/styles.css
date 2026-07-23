@@ -101,6 +101,16 @@ code { color:#fdba74; }
 .bg-preview img { width:100%; height:100%; object-fit:cover; display:block; }
 .prompt-copy-box { background:#0d1018; border:1px solid var(--line); border-radius:12px; padding:12px; font-size:13px; line-height:1.6; white-space:pre-wrap; }
 
+.scene-preset-picker { margin-bottom:14px; }
+.season-filter { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px; }
+.chip { padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:#151a27; color:var(--muted); cursor:pointer; font-size:12px; font-weight:700; }
+.chip.selected { border-color:var(--accent); background:rgba(249,115,98,.16); color:#fff; }
+.scene-preset-grid { grid-template-columns:repeat(2,minmax(0,1fr)); max-height:220px; overflow-y:auto; padding-right:4px; }
+.scene-preset-card { padding:9px 10px; }
+.scene-preset-card b { font-size:12px; }
+.preset-hint { display:flex; align-items:center; gap:6px; margin-top:8px; }
+.swatch-inline { display:inline-block; width:14px; height:14px; border-radius:4px; border:1px solid rgba(255,255,255,.4); vertical-align:middle; }
+
 /* Compose step */
 .compose-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
 .compose-card canvas { width:100%; border-radius:14px; border:1px solid var(--line); background:#0c0e14; }

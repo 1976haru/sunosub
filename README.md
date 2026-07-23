@@ -38,7 +38,8 @@
 ```
 creator-studio/
   server.js              Express 서버 (포트 5300, 전체 라우팅)
-  lib/                    키 저장소, Gemini 클라이언트, 재시도(backoff), 무키 유튜브 파서, 썸네일 카피 뱅크
+  lib/                    키 저장소, Gemini 클라이언트, 재시도(backoff), 무키 유튜브 파서, 썸네일 카피 뱅크,
+                          썸네일 시즌·장면 프리셋
   routes/                 /api/yt, /api/shorts, /api/story, /api/timeline, /api/thumbnail 라우터
   public/                 앱 셸(탭 UI, 키 배지, 키 변경 모달)
   tools/
@@ -75,6 +76,22 @@ creator-studio/
   (`/remove-text`)만 담당하며, 두 경로 모두 실존 인물·브랜드 IP·기존 작품 재현·텍스트/워터마크 금지
   문구를 프롬프트에 항상 덧붙입니다. 업로드(`/upload`)는 `ownershipConfirmed=true`가 없으면 서버가
   거부해, 클라이언트의 1회 소유권 확인 모달을 우회할 수 없게 합니다.
+- **썸네일 품질·시즌 프리셋 강화 (CS-v1.5, `lib/scenePresets.js`)**: "컨셉대로 만들면 품질 있게, 시즌
+  트렌드(여름=바닷가/파란하늘 등)에 맞게"라는 요구에 대응해 19종의 시즌×장소 프리셋(여름 5·가을 4·
+  겨울 4·봄 3·상시 3)을 추가했습니다. 각 프리셋은 한국어 라벨 하나로 완성된 영어 사진 프롬프트
+  (`promptSeed` = 장면 + 조명 문구 + 무드 + 팔레트)를 만들어 `GET /api/thumbnail/scene-presets`로
+  내려주고, 클라이언트(3단계 배경 이미지)는 시즌 필터 → 프리셋 카드 선택만으로 프롬프트 입력창을
+  채웁니다(직접 수정도 가능). `routes/thumbnail.js`의 `/generate-background`는 프리셋 여부와 무관하게
+  모든 프롬프트에 품질 부스터 문구(`QUALITY_BOOSTER`: professional photography, photorealistic,
+  cinematic lighting 등, "no plastic-looking CGI"로 AI 특유의 인조적 느낌을 명시적으로 배제)와 텍스트
+  오버레이용 저디테일 여백 지시(`TEXT_SPACE_INSTRUCTION`)를 항상 덧붙이며, 1:1 커버에는 "album cover
+  aesthetic" 문구를 추가로 붙입니다. 해상도는 썸네일 1280×720 → **1920×1080**으로 상향했고(커버
+  3000×3000 유지), Gemini `imageConfig.imageSize`는 기본 `2K`를 요청하되 계정/리전이 이를 거부하면
+  `generateImage()` 헬퍼가 자동으로 `1K`에 재시도합니다. 캔버스 합성(`tools/thumbnail/canvas.js`)에는
+  `imageSmoothingQuality: 'high'`를 켜 저해상도 배경을 확대할 때도 품질 저하를 최소화합니다. 프리셋
+  선택 시 카피 후보 생성(2단계)의 컨셉 입력란에도 `"{프리셋 라벨} 감성"` 문자열이 공백 정규화 후 자동
+  반영됩니다(`normalizeConcept()`) — 이전에는 프리셋 라벨과 접미사를 그냥 이어 붙이면 공백이 사라질 수
+  있었던 부분을 명시적으로 고정했습니다.
 - **타임라인의 실제 파일명 변경 (CS-v1.2, `routes/timeline.js`)**: 브라우저는 로컬 파일의 진짜 경로나
   파일명을 바꿀 권한이 없어서, CS-v1.1까지는 화면 표시용 제목 문자열에만 연번이 붙고 실제 WAV/MP3
   파일명은 그대로였습니다. 이 서버가 대신 두 가지 방법을 제공합니다:
@@ -135,6 +152,18 @@ creator-studio/
 - [x] (CS-v1.4) 브라우저를 직접 조작한 실측은 아님(이 세션에는 브라우저 자동화 도구가 연결되지 않음) —
       위 항목들은 서버 curl 호출, Node로 직접 실행한 모듈 단위 테스트, 코드 리뷰로 검증한 것이며 아래
       "사용자 확인 필요" 목록에 실제 화면 조작 확인이 별도로 남아 있음
+- [x] (CS-v1.5) `node --check`: `lib/scenePresets.js`, `routes/thumbnail.js`, `tools/thumbnail/app.js`,
+      `tools/thumbnail/canvas.js`, `server.js` 모두 통과
+- [x] (CS-v1.5) `GET /api/thumbnail/scene-presets` 실제 호출: 19개 프리셋이 여름 5·가을 4·겨울 4·봄 3·
+      상시 3으로 정확히 반환되고, 전 항목이 `promptSeed`/`recommendedTextColor`/`recommendedShadowColor`
+      를 빠짐없이 포함함을 확인
+- [x] (CS-v1.5) `summer-beach-morning` 프리셋의 `promptSeed`가 장면+조명("soft morning light")+무드+
+      팔레트 순으로 정확히 조립됨을 실측(`calm tropical beach at sunrise, ... soft morning light, fresh
+      and hopeful mood, warm golden and soft blue color palette`)
+- [x] (CS-v1.5) 서버 기동 중 이전 세션에서 떠 있던 프로세스가 포트 5300을 점유해 새 라우트가 404로
+      응답하는 상황을 실제로 겪음 — `pkill`이 이 Windows/Git Bash 환경에서 인자까지 매칭하지 못해
+      실패했고, `netstat`으로 실제 PID를 찾아 `taskkill`로 종료한 뒤에야 최신 코드가 반영됨. 이후 항상
+      포트 점유 여부를 `netstat`으로 먼저 확인 후 재기동하도록 함
 - [x] (CS-v1.3) 반복 횟수: 실제 프로덕션 스크립트(`tools/timeline/index.html`)의 `formatTime`/
       `buildRepeatedRows`/`getRepeatCount`를 Node에 추출해(DOM 스텁) 직접 실행한 실측 — 18곡(합계
       57:06으로 테스트) × 3회 반복 시 마지막(54번째) 곡 시작 시각이 손계산과 정확히 일치, 회차 경계
@@ -176,12 +205,23 @@ creator-studio/
       동일하게 유지되는지 화면에서 확인
 - [ ] (CS-v1.4) [썸네일·커버] 업로드 이미지의 "기존 텍스트 제거" 체크 후 실제 Gemini 인페인팅 결과물
       품질(텍스트가 자연스럽게 지워지는지, 가로 확장 시 배경이 이어지는지)
-- [ ] (CS-v1.4) [썸네일·커버] Gemini 배경 생성, 다운로드된 썸네일(1280×720 이상)/커버(3000×3000) PNG의
+- [ ] (CS-v1.5) [썸네일·커버] Gemini 배경 생성, 다운로드된 썸네일(**1920×1080**)/커버(3000×3000) PNG의
       실제 치수와 파일이 정상 열리는지
 - [ ] (CS-v1.4) [썸네일·커버] Google Fonts(Black Han Sans 등 6종)가 실제 네트워크 환경에서 캔버스에
       올바르게 렌더링되는지(폰트 로드 실패 시 폴백 폰트로만 보이지 않는지)
 - [ ] (CS-v1.4) [썸네일·커버] 세트 단위 일괄 생성 시 브라우저가 여러 PNG 연속 다운로드를 차단하지
       않는지(브라우저별 다운로드 팝업 차단 정책 확인 필요)
+- [ ] (CS-v1.5) [썸네일·커버] 3단계에서 시즌 필터("여름" 등) 클릭 → 프리셋 카드 선택 → 배경 프롬프트
+      입력창이 실제로 자동 채워지는지, 2단계 카피 컨셉에도 "{프리셋} 감성"이 반영되는지 화면에서 확인
+- [ ] (CS-v1.5) [썸네일·커버] 실제 Gemini 키로 "여름 바닷가 아침" 등 프리셋 배경을 생성해 육안 품질 확인
+      (전문 사진처럼 보이는지, no plastic-looking CGI 지시가 실제로 AI 특유의 인조적 질감을 줄이는지) —
+      이 세션은 이전 CS-v1.4 검증에서 이미 무료 등급 분당 요청 한도를 소진해 두 차례 재시도 모두
+      429(RESOURCE_EXHAUSTED)를 받았고, 서버가 이를 안전하게 한국어 오류로 감싸 반환하는 것만 확인함.
+      실제 이미지 결과물 품질은 사용자가 직접 확인 필요
+- [ ] (CS-v1.5) [썸네일·커버] `imageConfig.imageSize: '2K'` 요청이 실제 계정에서 그대로 수락되는지,
+      혹은 `generateImage()`의 `1K` 폴백이 실제로 발동하는지(이 세션에서는 429로 막혀 확인 못함)
+- [ ] (CS-v1.5) [썸네일·커버] 캔버스 `imageSmoothingQuality: 'high'` 적용 후 저해상도(1K) 배경을
+      1920×1080/3000×3000으로 확대했을 때 눈에 띄는 화질 저하가 없는지 육안 확인
 
 ## 알려진 한계
 

@@ -8,7 +8,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 const SAMPLE_COPY = '그시절 그노래\n올드팝송';
-const THUMB_SIZE = { width: 1280, height: 720 };
+const THUMB_SIZE = { width: 1920, height: 1080 };
 const COVER_SIZE = { width: 3000, height: 3000 };
 
 const BANNED_WORDS = ['충격', '소름', '경악', '헐', '대박사건', '치료', '완치', '효능', '효과', '부작용', '질병', '질환', '처방'];
@@ -40,9 +40,10 @@ const state = {
   copyUsedFallback: false,
   selectedCopyText: '',
   copyHistory: [],
+  scenePresets: [],
   targets: {
-    thumb: { sourceTab: 'upload', prompt: '', imageUrl: null },
-    cover: { sourceTab: 'upload', prompt: '', imageUrl: null },
+    thumb: { sourceTab: 'upload', prompt: '', imageUrl: null, season: '전체', presetId: null },
+    cover: { sourceTab: 'upload', prompt: '', imageUrl: null, season: '전체', presetId: null },
   },
   composeText: { thumb: '', cover: '' },
   showBadge: { thumb: true, cover: false },
@@ -87,6 +88,10 @@ function escapeHtml(value = '') {
   }[char]));
 }
 
+function normalizeConcept(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 function validateCopy(text) {
   const value = String(text || '').trim();
   if (!value) return { ok: false, reason: '문구를 입력해 주세요.' };
@@ -111,6 +116,13 @@ function activeTemplate() {
 
 async function refreshChannelList() {
   state.channels = await idb.listChannelNames();
+}
+
+async function loadScenePresets() {
+  try {
+    const data = await api('/api/thumbnail/scene-presets');
+    state.scenePresets = data.presets || [];
+  } catch { state.scenePresets = []; }
 }
 
 function renderBrand() {
@@ -341,7 +353,7 @@ async function generateCopy(isRegenerate) {
   setLoading(true, '카피 후보 생성 중', '스타일 태그별로 서로 다른 문구를 만들고 있습니다.');
   try {
     const avoid = [...state.copyHistory, ...(isRegenerate ? state.copyCandidates.map((c) => c.text) : [])];
-    const data = await postJson('/api/thumbnail/copy', { concept: state.copyConcept, avoid, count: 5 });
+    const data = await postJson('/api/thumbnail/copy', { concept: normalizeConcept(state.copyConcept), avoid, count: 5 });
     state.copyCandidates = data.candidates || [];
     state.copyUsedFallback = Boolean(data.usedFallback);
     state.selectedCopyText = '';
@@ -404,6 +416,28 @@ function bgTargetCard(key) {
     </div>`;
 }
 
+function scenePresetPicker(target) {
+  if (!state.scenePresets.length) return '';
+  const seasons = [...new Set(state.scenePresets.map((p) => p.season))];
+  const filtered = target.season === '전체' ? state.scenePresets : state.scenePresets.filter((p) => p.season === target.season);
+  const selected = state.scenePresets.find((p) => p.id === target.presetId);
+  return `
+    <div class="scene-preset-picker">
+      <label>시즌·컨셉 프리셋</label>
+      <div class="season-filter">
+        <button type="button" class="chip ${target.season === '전체' ? 'selected' : ''}" data-season="전체">전체</button>
+        ${seasons.map((s) => `<button type="button" class="chip ${target.season === s ? 'selected' : ''}" data-season="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
+      </div>
+      <div class="preset-grid scene-preset-grid">
+        ${filtered.map((p) => `
+          <button type="button" class="preset-card scene-preset-card ${target.presetId === p.id ? 'selected' : ''}" data-scene-preset="${p.id}">
+            <b>${escapeHtml(p.labelKo)}</b>
+          </button>`).join('')}
+      </div>
+      ${selected ? `<p class="help preset-hint">추천 텍스트 색 <span class="swatch-inline" style="background:${selected.recommendedTextColor}"></span> · 그림자 색 <span class="swatch-inline" style="background:${selected.recommendedShadowColor}"></span> (브랜드 템플릿 단계에서 직접 적용해 보세요)</p>` : ''}
+    </div>`;
+}
+
 function bgSourceBody(key, target) {
   if (target.sourceTab === 'upload') {
     return `
@@ -414,13 +448,31 @@ function bgSourceBody(key, target) {
   }
   if (target.sourceTab === 'gemini') {
     return `
+      ${scenePresetPicker(target)}
       <div class="field"><label>배경 생성 프롬프트</label><textarea class="bg-prompt" placeholder="예: warm golden-hour cafe window, vintage vinyl records, soft bokeh, no people, no text">${escapeHtml(target.prompt)}</textarea></div>
       <button class="button primary small bg-generate">Gemini로 배경 생성</button>`;
   }
   return `
+    ${scenePresetPicker(target)}
     <div class="field"><label>외부 툴(Midjourney 등)용 프롬프트</label><textarea class="bg-prompt" placeholder="예: warm golden-hour cafe window, vintage vinyl records, soft bokeh, no people, no text">${escapeHtml(target.prompt)}</textarea></div>
     <button class="button ghost small bg-copy-prompt">프롬프트 복사</button>
     <p class="help">복사한 프롬프트로 외부 툴에서 만든 이미지를 "업로드" 탭으로 가져오세요.</p>`;
+}
+
+function applyScenePreset(key, presetId) {
+  const preset = state.scenePresets.find((p) => p.id === presetId);
+  if (!preset) return;
+  const target = state.targets[key];
+  target.presetId = preset.id;
+  target.prompt = preset.promptSeed;
+  renderBackground();
+
+  const concept = normalizeConcept(`${preset.labelKo} 감성`);
+  if (concept && concept !== normalizeConcept(state.copyConcept)) {
+    state.copyConcept = concept;
+    renderCopy();
+    toast(`카피 컨셉에도 "${concept}"을(를) 반영했습니다.`);
+  }
 }
 
 function wireBgTarget(key) {
@@ -430,6 +482,12 @@ function wireBgTarget(key) {
     target.sourceTab = btn.dataset.source;
     renderBackground();
   }));
+
+  $$('.season-filter .chip', card).forEach((btn) => btn.addEventListener('click', () => {
+    target.season = btn.dataset.season;
+    renderBackground();
+  }));
+  $$('.scene-preset-card', card).forEach((btn) => btn.addEventListener('click', () => applyScenePreset(key, btn.dataset.scenePreset)));
 
   const uploadInput = $('.bg-upload', card);
   uploadInput?.addEventListener('change', () => handleBackgroundUpload(key, uploadInput.files[0], $('.bg-remove-text-toggle', card)?.checked));
@@ -660,7 +718,7 @@ async function checkStatus() {
 }
 
 async function boot() {
-  await refreshChannelList();
+  await Promise.all([refreshChannelList(), loadScenePresets()]);
   await renderAll();
   switchStep('brand');
   checkStatus();

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { requireGeminiClient, withRetry } from '../lib/gemini.js';
 import { currentKey } from '../lib/keyStore.js';
 import { STYLE_TAGS, validateCopyText, generateFallbackCandidates } from '../lib/thumbnailCopyBank.js';
+import { SCENE_PRESETS } from '../lib/scenePresets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const filesDir = path.join(__dirname, '..', 'output', 'thumbnails');
@@ -27,11 +28,20 @@ const upload = multer({
 
 const TEXT_MODEL = process.env.THUMBNAIL_TEXT_MODEL || 'gemini-3.5-flash';
 const IMAGE_MODEL = process.env.THUMBNAIL_IMAGE_MODEL || process.env.SHORTS_IMAGE_MODEL || 'gemini-3.1-flash-image-preview';
+const IMAGE_SIZE_DEFAULT = process.env.THUMBNAIL_IMAGE_SIZE || '2K';
 
 const SAFETY_SUFFIX = 'Do not reproduce or reference any existing painting, artwork, film still, or copyrighted illustration. '
   + 'Do not depict any real or identifiable person, celebrity, or public figure. Do not include any brand logo or trademarked '
   + 'character. Do not create a meme-style juxtaposition or collage. Do not render any text, letters, numbers, captions, price '
   + 'tags, URLs, or social media handles in the image.';
+
+// Always appended so every background — preset-seeded or freely typed — reads
+// as a clean, professional photo rather than an AI-plastic render.
+const QUALITY_BOOSTER = 'professional photography, photorealistic, cinematic lighting, natural color grading, soft depth '
+  + 'of field, high dynamic range, crisp detail, clean composition, no harsh HDR, no oversaturation, no plastic-looking CGI.';
+const ALBUM_COVER_PHRASE = 'Album cover aesthetic: iconic, simple, and readable at a small thumbnail size.';
+const TEXT_SPACE_INSTRUCTION = 'Leave the upper third and center of the frame calm, uncluttered and low in fine detail so '
+  + 'text can be overlaid there afterward, while keeping the rest of the composition rich and detailed.';
 
 function safeId(value, fallback = `thumb-${Date.now()}`) {
   const clean = String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
@@ -85,6 +95,33 @@ async function filePartFromUrl(fileUrl) {
   return { inlineData: { mimeType, data: data.toString('base64') } };
 }
 
+function isImageSizeRejection(error) {
+  const message = String(error?.message || '');
+  return /image[_ ]?size|invalid.*size|unsupported.*size/i.test(message);
+}
+
+// Requests the highest configured resolution first; some accounts/regions
+// don't yet support the larger enum value, so this falls back to 1K once
+// rather than failing the whole generation over an image-size mismatch.
+async function generateImage(ai, contents, aspectRatio, imageSize) {
+  try {
+    return await withRetry(() => ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents,
+      config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize } },
+    }));
+  } catch (error) {
+    if (imageSize !== '1K' && isImageSizeRejection(error)) {
+      return withRetry(() => ai.models.generateContent({
+        model: IMAGE_MODEL,
+        contents,
+        config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '1K' } },
+      }));
+    }
+    throw error;
+  }
+}
+
 function extractInlineImage(response) {
   const parts = response?.candidates?.[0]?.content?.parts || [];
   const imagePart = [...parts].reverse().find((part) => part.inlineData?.data);
@@ -129,9 +166,13 @@ router.get('/status', (_req, res) => {
   });
 });
 
+router.get('/scene-presets', (_req, res) => {
+  res.json({ presets: SCENE_PRESETS });
+});
+
 router.post('/copy', async (req, res, next) => {
   try {
-    const concept = String(req.body?.concept || '').trim();
+    const concept = String(req.body?.concept || '').replace(/\s+/g, ' ').trim();
     const avoid = Array.isArray(req.body?.avoid) ? req.body.avoid.slice(0, 60) : [];
     const count = Math.min(5, Math.max(3, Number(req.body?.count) || 5));
 
@@ -200,21 +241,18 @@ router.post('/generate-background', async (req, res, next) => {
       projectId,
       prompt,
       aspectRatio = '16:9',
-      imageSize = '1K',
+      imageSize = IMAGE_SIZE_DEFAULT,
       name = `bg-${Date.now()}`,
     } = req.body;
     if (!String(prompt || '').trim()) throw new Error('배경 이미지 프롬프트가 없습니다.');
     const { id, dir } = await ensureProject(projectId);
     const ai = requireGeminiClient();
-    const finalPrompt = `Create ONE single cohesive background image for a YouTube ${aspectRatio === '1:1' ? 'channel/album cover' : 'video thumbnail'}.
+    const isCover = aspectRatio === '1:1';
+    const finalPrompt = `Create ONE single cohesive background image for a YouTube ${isCover ? 'channel/album cover' : 'video thumbnail'}.
 ${prompt}
 
-Strict requirements: ${aspectRatio} aspect ratio, full-bleed composition, no split screen, no collage, no text, no letters, no numbers, no captions, no watermark. Leave enough clean, low-detail space for text to be overlaid afterward. ${SAFETY_SUFFIX}`;
-    const response = await withRetry(() => ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: [{ role: 'user', parts: [{ text: finalPrompt }] }],
-      config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize } },
-    }));
+Strict requirements: ${aspectRatio} aspect ratio, full-bleed composition, no split screen, no collage, no text, no letters, no numbers, no captions, no watermark. ${TEXT_SPACE_INSTRUCTION} ${QUALITY_BOOSTER}${isCover ? ` ${ALBUM_COVER_PHRASE}` : ''} ${SAFETY_SUFFIX}`;
+    const response = await generateImage(ai, [{ role: 'user', parts: [{ text: finalPrompt }] }], aspectRatio, imageSize);
     const image = extractInlineImage(response);
     const ext = mimeExtension(image.mimeType);
     const filePath = path.join(dir, `${safeName(name)}.${ext}`);
@@ -239,14 +277,12 @@ router.post('/remove-text', async (req, res, next) => {
     const instruction = expand
       ? `Remove all existing text, captions, letters, numbers, logos and watermarks from this image, filling the removed areas naturally to match the surrounding style, lighting and composition. Then extend the image content outward (outpainting) on the sides so the final result fully fills a ${aspectRatio} widescreen frame, keeping the original subject centered and the background continuing seamlessly. Do not add any new text.`
       : 'Remove all existing text, captions, letters, numbers, logos and watermarks from this image. Fill the removed areas naturally to match the surrounding style, lighting and composition. Do not add any new text, and do not otherwise change the composition.';
-    const response = await withRetry(() => ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: [{
-        role: 'user',
-        parts: [basePart, { text: `${instruction} ${SAFETY_SUFFIX}` }],
-      }],
-      config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '1K' } },
-    }));
+    const response = await generateImage(
+      ai,
+      [{ role: 'user', parts: [basePart, { text: `${instruction} ${QUALITY_BOOSTER} ${SAFETY_SUFFIX}` }] }],
+      aspectRatio,
+      IMAGE_SIZE_DEFAULT,
+    );
     const image = extractInlineImage(response);
     const ext = mimeExtension(image.mimeType);
     const filePath = path.join(dir, `${safeName(name)}.${ext}`);
