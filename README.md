@@ -33,6 +33,13 @@
   업로드 이미지의 기존 텍스트 제거(인페인팅)만 키가 필요합니다. 채널 브랜드 템플릿 설정·합성·PNG 다운로드는
   전부 브라우저(Canvas)에서 이뤄지므로 키와 무관하게 항상 동작합니다.
 
+> **(v3.37) Suno 팩(세트) 썸네일은 Suno Weaver Studio 사용을 권장합니다.** 이 탭의 이미지 파이프라인
+> (배경 생성 + 캔버스 합성 + 브랜드 템플릿)은 Suno Weaver Studio의 `ThumbnailImageStudioPanel`로도
+> 이식되었고, 그쪽은 팩의 시즌·아키타입·A/B/C 문구·멀티세트 컨텍스트가 이미 연결되어 있어 세트별 배경이
+> 자동으로 달라집니다. 이 앱의 썸네일 탭은 계속 남아있으며 Suno 팩과 무관한 범용 이미지(다른 채널, 일반
+> 콘텐츠 등)를 만들 때 그대로 쓰면 됩니다 — 다만 Suno 팩 세트 작업이라면 컨텍스트를 다시 입력할 필요 없는
+> Suno Weaver Studio 쪽이 더 빠릅니다.
+
 ## 폴더 구조
 
 ```
@@ -103,6 +110,36 @@ creator-studio/
     맞는 이름은 건너뜀)·이름 충돌 감지·시스템 폴더 차단을 서버가 재검증합니다. 실행 직전 폴더에
     `_rename_backup.json`을 써 두고 `POST /api/timeline/undo-rename`으로 가장 최근 적용을 되돌릴 수
     있습니다(1단계 되돌리기 — 그 이전 이력은 보관하지 않습니다).
+- **타임라인 괄호 제목 (CS-v1.6, `tools/timeline/index.html` + `POST /api/timeline/translate-titles`)**:
+  "괄호 제목 표기" 선택(사용 안 함 / 한국어 / 일본어 / 둘 다)에 따라 타임라인 출력이
+  `00:00 01. Morning Light (아침의 빛 / 朝の光)` 형태가 됩니다. 언어별 제목은 트랙마다 `titleKo`/`titleJa`
+  필드에 **따로** 저장하고 출력 시점에만 합칩니다 — `track.title`은 ZIP·폴더 rename이 실제 파일명으로
+  쓰는 값이라, 괄호를 여기에 섞으면 디스크에 `01. Morning Light (아침의 빛).wav` 같은 파일이 생기기
+  때문입니다. 괄호 제목은 타임라인 텍스트와 CSV(`출력 제목`/`원본 제목`/`한국어 제목`/`일본어 제목` 열)
+  에만 반영됩니다. 원곡 제목이 이미 대상 언어이거나 번역 결과가 원제와 같으면 괄호를 아예 붙이지 않아
+  `벚꽃 언덕 (벚꽃 언덕)` 같은 중복이 생기지 않습니다. AI 채우기는 곡 목록 전체를 한 번의 Gemini 호출로
+  처리하며, 응답을 순서가 아니라 `index` 키로 되돌려 매핑해 짧거나 뒤섞인 응답이 와도 제목이 다른 곡에
+  밀려 들어가지 않습니다.
+- **유튜브 번역 자동 등록 (CS-v1.6, `lib/ytOAuth.js` + `lib/ytLanguages.js` + `/api/yt/oauth/*`,
+  `/api/yt/publish-localizations`)**: 번역기 결과를 유튜브 영상의 `localizations`(언어별 제목·설명)로
+  직접 올립니다. 유튜브가 번역해 주는 기능이 아니라, 시청자의 유튜브 언어 설정에 맞춰 우리가 올린
+  번역문을 보여 주는 기능입니다. 구현상 주의점:
+  - **쓰기라서 API 키로는 안 됩니다.** OAuth 2.0(`youtube.force-ssl`)이 필요하고, 클라이언트 ID/보안
+    비밀번호와 refresh token은 `.yt_oauth.json`(mode 600, gitignore)에만 저장됩니다. 리디렉션 URI는
+    이 서버 자신(`http://localhost:5300/api/yt/oauth/callback`)이며 UI에 복사 버튼과 함께 표시됩니다.
+  - **`videos.update`는 지정한 part를 통째로 교체합니다.** 값이 있는 속성을 빼고 보내면 그 값이
+    삭제되므로, 등록 경로는 항상 `videos.list` → 기존 title/description/categoryId/tags/기존
+    localizations 보존 → 병합 → `PUT`의 read-modify-write입니다.
+  - `snippet.defaultLanguage`(원문 언어)가 설정돼 있어야 유튜브가 localizations를 받습니다. UI의
+    "원문 언어" 선택이 이 값입니다.
+  - 한국어 언어 라벨(`포르투갈어 (브라질)`)을 BCP-47(`pt-BR`)로 바꾸는 표는 `lib/ytLanguages.js`에
+    후보 배열로 두고, 런타임에 `i18nLanguages.list`로 받아온 실제 지원 목록과 대조해 첫 지원 코드를
+    씁니다(`nl-BE` 미지원 → `nl`). 코드가 겹치면 뒤엣것을 건너뛰고 이유를 보고합니다.
+  - 미리보기(`dryRun`) → 적용 2단계이며, 적용은 미리본 계획 그대로만 전송합니다. 연결 계정의 채널
+    영상이 아니면 쓰기 전에 막습니다.
+  - **동의 화면이 "테스트" 상태면 구글이 7일마다 refresh token을 만료시킵니다.** 숨기지 않고
+    연결 경과일 배지와 `invalid_grant` 전용 안내 문구로 표면화합니다. 쿼터는 `videos.update` 1회당
+    50유닛(기본 일일 10,000유닛)이라 언어를 몇 개 올리든 영상 1편당 50유닛입니다.
 - Gemini 키는 서버가 `.gemini_key` 파일 또는 `GEMINI_API_KEY` 환경변수에서 읽어 4개 도구가 공유합니다.
   키 값은 API 응답이나 로그에 노출하지 않습니다.
 - **스토리보드 전환 방식(중요)**: 원본은 vite `define`으로 빌드 타임에 `process.env.API_KEY`를

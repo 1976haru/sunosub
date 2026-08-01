@@ -5,6 +5,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { Type } from '@google/genai';
+import { requireGeminiClient, withRetry } from '../lib/gemini.js';
 
 /**
  * TASK CS-v1.2 — the timeline tool's CS-v1.1 auto-numbering only ever
@@ -133,6 +135,70 @@ async function writeSettings(patch) {
   await fsp.writeFile(SETTINGS_FILE, JSON.stringify(next, null, 2), 'utf8');
   return next;
 }
+
+/**
+ * TASK CS-v1.6 — the timeline can now print a bracketed second-language title
+ * next to each song ("01. Morning Light (아침의 빛)"). Typing 60 of those by
+ * hand per pack is the whole reason this route exists: it localizes the track
+ * titles in one batch call.
+ *
+ * These are *song titles for a playlist description*, not prose — so the
+ * prompt asks for a natural, singable-sounding title in the target language
+ * rather than a literal gloss, and returns an empty string rather than
+ * inventing something when a title is already in the target language (the
+ * client then just prints the title alone, with no empty parentheses).
+ */
+router.post('/translate-titles', async (req, res, next) => {
+  try {
+    const titles = Array.isArray(req.body?.titles) ? req.body.titles.map((x) => String(x || '')) : [];
+    const target = String(req.body?.target || '').trim();
+    const TARGETS = { ko: '한국어(Korean)', ja: '일본어(Japanese)' };
+    if (!titles.length) throw httpError('번역할 제목이 없습니다.');
+    if (titles.length > 120) throw httpError('한 번에 최대 120곡까지 처리할 수 있습니다.');
+    if (!TARGETS[target]) throw httpError('대상 언어는 ko 또는 ja만 지원합니다.');
+
+    const ai = requireGeminiClient();
+    const prompt = `You are localizing song titles for a YouTube playlist description.
+
+Target language: ${TARGETS[target]}
+
+Rules:
+1. Return exactly ${titles.length} objects, in the same order as the input list.
+2. "index" must be the input's 0-based index.
+3. "title" is the localized song title: natural, short, and song-like — not a literal word-for-word gloss and not an explanation.
+4. Ignore and do NOT reproduce any leading track number such as "01." or "(3)".
+5. If the original title is already written in the target language, return an empty string for "title".
+6. Keep proper nouns, place names, and artist names in their standard localized form.
+7. No quotation marks, no commentary, no extra punctuation.
+
+Song titles:
+${titles.map((t, i) => `${i}. ${t}`).join('\n')}`;
+
+    const response = await withRetry(() => ai.models.generateContent({
+      model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: { index: { type: Type.NUMBER }, title: { type: Type.STRING } },
+            required: ['index', 'title'],
+          },
+        },
+      },
+    }));
+
+    const parsed = JSON.parse(String(response.text || '[]'));
+    if (!Array.isArray(parsed)) throw httpError('AI 응답 형식이 올바르지 않습니다.', 502);
+    // Index-keyed rather than positional: a short or reordered response then
+    // leaves the untouched rows blank instead of shifting every later title
+    // onto the wrong song.
+    const byIndex = new Map(parsed.map((item) => [Number(item?.index), String(item?.title || '').trim()]));
+    res.json({ target, titles: titles.map((_, i) => byIndex.get(i) || '') });
+  } catch (error) { next(error); }
+});
 
 router.get('/last-folder', async (_req, res, next) => {
   try {

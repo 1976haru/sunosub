@@ -96,6 +96,84 @@
       </div>
       <div id="resultsList" class="results-list"></div>
     </section>
+
+    <!-- TASK CS-v1.6 — 번역 결과를 유튜브 영상에 직접 등록(localizations) -->
+    <section id="publishPanel" class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">PUBLISH TO YOUTUBE</p>
+          <h2>유튜브에 번역 자동 등록</h2>
+        </div>
+        <div id="oauthBadges" class="status-badges"></div>
+      </div>
+      <p class="hint">
+        번역 결과를 내 영상의 <strong>언어별 제목·설명</strong>으로 직접 올립니다. 시청자의 유튜브 언어 설정에 맞는 제목이
+        자동으로 보이게 되는 기능이며, 유튜브가 번역해 주는 게 아니라 여기서 만든 번역문을 그대로 등록하는 방식입니다.
+        내 채널에 올라간 영상만 등록할 수 있습니다.
+      </p>
+
+      <details id="oauthSetup" class="setup-box">
+        <summary>① 최초 1회 설정 — 구글 OAuth 클라이언트 만들기</summary>
+        <ol class="setup-steps">
+          <li><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console &gt; 사용자 인증 정보</a>에서 프로젝트를 만듭니다.</li>
+          <li>[API 및 서비스 &gt; 라이브러리]에서 <strong>YouTube Data API v3</strong>를 사용 설정합니다.</li>
+          <li>[OAuth 동의 화면]을 <strong>외부</strong>로 만들고, 테스트 사용자에 <strong>내 구글 계정</strong>을 추가합니다.</li>
+          <li>[사용자 인증 정보 만들기 &gt; OAuth 클라이언트 ID &gt; <strong>웹 애플리케이션</strong>]을 만들고,
+            승인된 리디렉션 URI에 아래 주소를 <em>그대로</em> 붙여 넣습니다.
+            <div class="copy-row"><code id="redirectUriBox">http://localhost:5300/api/yt/oauth/callback</code>
+              <button id="copyRedirectBtn" class="mini-btn">복사</button></div>
+          </li>
+          <li>발급된 클라이언트 ID와 보안 비밀번호를 아래에 넣고 저장합니다. 이 PC의 <code>.yt_oauth.json</code>에만 저장됩니다.</li>
+        </ol>
+        <div class="publish-grid">
+          <div>
+            <label class="label" for="clientIdInput">클라이언트 ID</label>
+            <input id="clientIdInput" type="text" placeholder="…apps.googleusercontent.com" autocomplete="off" />
+          </div>
+          <div>
+            <label class="label" for="clientSecretInput">클라이언트 보안 비밀번호</label>
+            <input id="clientSecretInput" type="password" placeholder="GOCSPX-…" autocomplete="off" />
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:12px">
+          <button id="saveClientBtn" class="btn secondary">클라이언트 정보 저장</button>
+        </div>
+        <p class="hint">
+          동의 화면이 “테스트” 상태이면 구글이 <strong>7일마다 연결을 만료</strong>시킵니다. 만료되면 아래 [유튜브 계정 연결]을
+          다시 누르면 됩니다. “프로덕션”으로 게시하면 만료되지 않지만 구글 검수가 필요합니다.
+        </p>
+      </details>
+
+      <div class="toolbar" style="margin-top:14px">
+        <button id="connectYoutubeBtn" class="btn primary">유튜브 계정 연결</button>
+        <button id="refreshVideosBtn" class="btn secondary">내 영상 목록 불러오기</button>
+        <button id="disconnectYoutubeBtn" class="btn secondary">연결 해제</button>
+      </div>
+
+      <div class="publish-grid" style="margin-top:14px">
+        <div>
+          <label class="label" for="publishVideoId">대상 영상 (URL 또는 ID)</label>
+          <input id="publishVideoId" type="text" placeholder="https://www.youtube.com/watch?v=… 또는 11자리 ID" autocomplete="off" />
+          <select id="myVideoSelect" class="hidden" style="margin-top:9px"></select>
+        </div>
+        <div>
+          <label class="label" for="defaultLanguageSelect">원문 언어 (필수)</label>
+          <select id="defaultLanguageSelect">
+            <option value="ko" selected>한국어 (ko)</option>
+            <option value="ja">일본어 (ja)</option>
+            <option value="en">영어 (en)</option>
+          </select>
+          <p class="hint">지금 영상에 올라가 있는 제목·설명이 무슨 언어인지입니다. 유튜브는 이 값이 있어야 언어별 제목을 받습니다.</p>
+        </div>
+      </div>
+
+      <div class="toolbar" style="margin-top:14px">
+        <button id="previewPublishBtn" class="btn secondary">미리보기 (등록 안 함)</button>
+        <button id="applyPublishBtn" class="btn primary" disabled>✅ 유튜브에 등록</button>
+      </div>
+      <div id="publishError" class="alert error hidden"></div>
+      <div id="publishReport" class="publish-report hidden"></div>
+    </section>
   </main>
 
   <div id="toast" class="toast hidden"></div>

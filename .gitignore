@@ -4,6 +4,7 @@ storyboard-app/dist/
 tools/storyboard/
 output/
 .gemini_key
+.yt_oauth.json
 .timeline-settings.json
 .env
 .env.local

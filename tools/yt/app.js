@@ -386,3 +386,222 @@ restoreLocal();
 renderLanguages();
 setupEvents();
 loadStatus();
+
+/* ------------------------------------------------------------------ *
+ * TASK CS-v1.6 — 유튜브에 번역 자동 등록 (videos.update: localizations)
+ *
+ * The write path is deliberately two-step (미리보기 → 등록), like the
+ * timeline tool's rename: this publishes to a live public channel, and the
+ * language-code resolution (한국어 라벨 → BCP-47) can legitimately fall back
+ * or drop a language, so the user sees exactly what will land before it does.
+ * ------------------------------------------------------------------ */
+
+const publishState = { oauth: null, plan: null };
+
+async function loadOAuthStatus() {
+  try {
+    const status = await api('/api/yt/oauth/status');
+    publishState.oauth = status;
+    $('redirectUriBox').textContent = status.redirectUri;
+    if (status.clientIdPreview && !$('clientIdInput').value) $('clientIdInput').placeholder = status.clientIdPreview;
+
+    const badges = [];
+    badges.push(`<span class="badge ${status.hasClient ? 'ok' : 'warn'}">OAuth 클라이언트 ${status.hasClient ? '설정됨' : '필요'}</span>`);
+    if (status.connected) {
+      const expiring = status.probablyExpired;
+      badges.push(`<span class="badge ${expiring ? 'warn' : 'ok'}">${escapeHtml(status.channelTitle || '연결됨')}${
+        status.connectionAgeDays !== null ? ` · ${status.connectionAgeDays}일 전 연결` : ''}</span>`);
+      if (expiring) {
+        badges.push(`<span class="badge warn">${status.testingTokenDays}일 만료 가능 · 재연결 권장</span>`);
+      }
+    } else {
+      badges.push('<span class="badge warn">계정 미연결</span>');
+    }
+    $('oauthBadges').innerHTML = badges.join('');
+    if (!status.hasClient) $('oauthSetup').open = true;
+  } catch (error) {
+    $('oauthBadges').innerHTML = '<span class="badge warn">연결 상태 확인 실패</span>';
+  }
+}
+
+async function saveOAuthClient() {
+  setError('publishError');
+  try {
+    await api('/api/yt/oauth/credentials', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientId: $('clientIdInput').value.trim(),
+        clientSecret: $('clientSecretInput').value.trim(),
+      }),
+    });
+    $('clientSecretInput').value = '';
+    showToast('클라이언트 정보를 저장했습니다. 이제 [유튜브 계정 연결]을 눌러 주세요.');
+    await loadOAuthStatus();
+  } catch (error) {
+    setError('publishError', error.message);
+  }
+}
+
+function connectYoutube() {
+  if (!publishState.oauth?.hasClient) {
+    $('oauthSetup').open = true;
+    return setError('publishError', '먼저 구글 OAuth 클라이언트 ID와 보안 비밀번호를 저장해 주세요.');
+  }
+  setError('publishError');
+  // A popup, not a redirect: this tool runs inside the Creator Studio shell's
+  // iframe and would otherwise navigate the whole app away to Google.
+  window.open('/api/yt/oauth/start', 'creator-studio-yt-oauth', 'width=520,height=680');
+}
+
+async function disconnectYoutube() {
+  try {
+    await api('/api/yt/oauth/disconnect', { method: 'POST' });
+    $('myVideoSelect').classList.add('hidden');
+    showToast('연결을 해제했습니다.');
+    await loadOAuthStatus();
+  } catch (error) {
+    setError('publishError', error.message);
+  }
+}
+
+async function loadMyVideos() {
+  setError('publishError');
+  const button = $('refreshVideosBtn');
+  button.disabled = true;
+  try {
+    const data = await api('/api/yt/my-videos?maxResults=50');
+    const select = $('myVideoSelect');
+    if (!data.videos.length) {
+      select.classList.add('hidden');
+      return setError('publishError', '채널에서 영상을 찾지 못했습니다.');
+    }
+    select.innerHTML = '<option value="">— 내 영상에서 고르기 —</option>' + data.videos.map((video) =>
+      `<option value="${escapeHtml(video.videoId)}">${escapeHtml(video.title)}</option>`).join('');
+    select.classList.remove('hidden');
+    showToast(`${data.videos.length}개 영상을 불러왔습니다.`);
+  } catch (error) {
+    setError('publishError', error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function currentTranslationsForPublish() {
+  return state.results
+    .filter((result) => (result.translatedTitle || '').trim())
+    .map((result) => ({
+      language: result.language,
+      translatedTitle: result.translatedTitle,
+      translatedDescription: result.translatedDescription,
+    }));
+}
+
+function renderPublishReport(data, applied) {
+  const box = $('publishReport');
+  const rows = (applied ? data.published : data.planned) || [];
+  const overwriting = new Set(data.overwriting || []);
+  const parts = [];
+
+  parts.push(`<h4>${applied ? '등록 완료' : '미리보기 — 아직 아무것도 등록되지 않았습니다'}</h4>`);
+  parts.push(`<p>영상: <strong>${escapeHtml(data.videoTitle || data.videoId)}</strong> · 원문 언어 <code>${escapeHtml(data.defaultLanguage)}</code>` +
+    (applied ? ` · 현재 등록된 언어 ${data.totalLocalizations}개` : '') + '</p>');
+
+  if (rows.length) {
+    parts.push(`<p class="ok">${applied ? '등록됨' : '등록 예정'} ${rows.length}개 언어</p><ul>` + rows.map((row) => {
+      const isOverwrite = overwriting.has(row.code);
+      return `<li><code>${escapeHtml(row.code)}</code> ${escapeHtml(row.language)}` +
+        (isOverwrite ? ' <span class="warn">(기존 번역 덮어씀)</span>' : '') +
+        (row.note ? ` <span class="warn">— ${escapeHtml(row.note)}</span>` : '') +
+        (row.title ? `<br /><span style="color:#cfe0f6">${escapeHtml(row.title)}</span>` : '') + '</li>';
+    }).join('') + '</ul>');
+  }
+
+  if (data.skipped?.length) {
+    parts.push(`<p class="bad">건너뜀 ${data.skipped.length}개</p><ul>` + data.skipped.map((row) =>
+      `<li>${escapeHtml(row.language)} — ${escapeHtml(row.reason)}</li>`).join('') + '</ul>');
+  }
+  if (!applied && data.currentDefaultLanguage && data.currentDefaultLanguage !== data.defaultLanguage) {
+    parts.push(`<p class="warn">이 영상의 원문 언어가 현재 <code>${escapeHtml(data.currentDefaultLanguage)}</code>로 설정돼 있습니다. 등록하면 <code>${escapeHtml(data.defaultLanguage)}</code>로 바뀝니다.</p>`);
+  }
+  if (applied) parts.push(`<p class="hint">유튜브 스튜디오 &gt; 자막/번역 메뉴에서도 확인할 수 있습니다. 반영까지 몇 분 걸릴 수 있습니다. (${escapeHtml(data.quotaNote || '')})</p>`);
+
+  box.innerHTML = parts.join('');
+  box.classList.remove('hidden');
+}
+
+async function previewPublish() {
+  setError('publishError');
+  const translations = currentTranslationsForPublish();
+  if (!translations.length) return setError('publishError', '먼저 위에서 번역을 실행해 주세요. 등록할 번역 결과가 없습니다.');
+  const videoId = $('publishVideoId').value.trim() || $('myVideoSelect').value;
+  if (!videoId) return setError('publishError', '대상 영상 URL 또는 ID를 입력해 주세요.');
+
+  $('previewPublishBtn').disabled = true;
+  try {
+    const data = await api('/api/yt/publish-localizations', {
+      method: 'POST',
+      body: JSON.stringify({
+        videoId,
+        defaultLanguage: $('defaultLanguageSelect').value,
+        translations,
+        dryRun: true,
+      }),
+    });
+    publishState.plan = { videoId, defaultLanguage: data.defaultLanguage, translations };
+    renderPublishReport(data, false);
+    $('applyPublishBtn').disabled = !data.planned?.length;
+  } catch (error) {
+    setError('publishError', error.message);
+    publishState.plan = null;
+    $('applyPublishBtn').disabled = true;
+  } finally {
+    $('previewPublishBtn').disabled = false;
+  }
+}
+
+async function applyPublish() {
+  if (!publishState.plan) return setError('publishError', '먼저 미리보기를 실행해 주세요.');
+  setError('publishError');
+  const button = $('applyPublishBtn');
+  button.disabled = true;
+  button.textContent = '등록 중…';
+  try {
+    // Publishes exactly the plan that was previewed, never a freshly rebuilt one.
+    const data = await api('/api/yt/publish-localizations', {
+      method: 'POST',
+      body: JSON.stringify({ ...publishState.plan, dryRun: false }),
+    });
+    renderPublishReport(data, true);
+    showToast(`${data.publishedCount}개 언어를 유튜브에 등록했습니다.`);
+  } catch (error) {
+    setError('publishError', error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = '✅ 유튜브에 등록';
+  }
+}
+
+function setupPublishEvents() {
+  $('saveClientBtn').addEventListener('click', saveOAuthClient);
+  $('connectYoutubeBtn').addEventListener('click', connectYoutube);
+  $('disconnectYoutubeBtn').addEventListener('click', disconnectYoutube);
+  $('refreshVideosBtn').addEventListener('click', loadMyVideos);
+  $('previewPublishBtn').addEventListener('click', previewPublish);
+  $('applyPublishBtn').addEventListener('click', applyPublish);
+  $('copyRedirectBtn').addEventListener('click', () => copyText($('redirectUriBox').textContent));
+  $('myVideoSelect').addEventListener('change', (event) => {
+    if (event.target.value) $('publishVideoId').value = event.target.value;
+    $('applyPublishBtn').disabled = true;
+  });
+  // Any change to the target invalidates the previewed plan.
+  ['publishVideoId', 'defaultLanguageSelect'].forEach((id) => {
+    $(id).addEventListener('input', () => { publishState.plan = null; $('applyPublishBtn').disabled = true; });
+  });
+  // The OAuth popup posts back here when Google finishes the round trip.
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'creator-studio:yt-oauth') loadOAuthStatus();
+  });
+}
+
+setupPublishEvents();
+loadOAuthStatus();

@@ -1,0 +1,215 @@
+# CLAUDE.md
+
+이 저장소에서 작업할 때 먼저 읽는 파일입니다. 여기 적힌 제약은 전부 실제 코드에서
+확인한 것이고, 근거 파일·줄 번호를 함께 적었습니다. 코드를 고치다 이 문서와 실제가
+어긋나면 **이 문서도 같이 고치세요.**
+
+---
+
+## 1. 프로젝트 개요
+
+로컬 전용 Express 서버 **한 개**(기본 포트 5300, `127.0.0.1` 바인딩)가 5개 크리에이터
+도구를 iframe으로 서빙하는 단일 앱입니다. 외부에 배포되지 않고 사용자 PC에서만 돕니다.
+
+용도: 시니어 대상 유튜브 플레이리스트 채널 2개(**한국 아침 플레이리스트**, **일본 쇼와
+카페**)의 제작 파이프라인. 채널당 주 12곡 기준.
+
+| 도구 | 정적 파일 | 라우터 |
+|---|---|---|
+| 유튜브 추출기·번역기·**자동 등록** | `tools/yt/` | `routes/yt.js` |
+| 음악 타임라인 생성기 | `tools/timeline/` | `routes/timeline.js` |
+| 스토리 숏츠 | `tools/shorts/` | `routes/shorts.js` |
+| 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
+| 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
+
+현재 버전: **CS-v1.6**
+
+---
+
+## 2. 실행과 검증
+
+```bash
+npm start        # node server.js
+npm run dev      # node --watch server.js
+npm run check    # node --check server.js  ← server.js 하나만 문법 검사한다
+```
+
+`engines.node >= 20` (개발 확인은 v22 기준).
+
+**주의: `npm run check`는 `server.js` 한 파일의 문법만 봅니다.** `routes/`, `lib/`,
+`tools/`는 전혀 검사하지 않습니다. 자동 테스트는 아직 없습니다(로드맵 #10). 그래서
+변경 후에는 **반드시 서버를 실제로 띄우고 해당 엔드포인트를 호출해서** 확인하세요.
+
+첫 실행은 `start-creator-studio.bat`이 `npm install`과 스토리보드 빌드까지 자동으로
+합니다(`start-creator-studio.bat:61-78`).
+
+---
+
+## 3. 아키텍처 제약 — 어기지 마세요
+
+### 3.1 `tools/*/`는 빌드 스텝이 없는 정적 파일
+
+- `tools/timeline/index.html`은 **HTML + CSS + JS가 한 파일에 들어있는 단일 파일**입니다
+  (약 1,200줄, `<script>` 안 IIFE). 여기에 import·번들러·모듈 시스템을 도입하지 마세요.
+  서버 없이 파일로 직접 열어도 타임라인 생성이 동작해야 한다는 것이 이 구조의 이유입니다.
+- `tools/yt/app.js`만 `type="module"`입니다(`tools/yt/index.html`).
+- `tools/shorts/`, `tools/thumbnail/`도 정적입니다.
+
+### 3.2 `tools/storyboard/`는 직접 수정 금지
+
+`storyboard-app/`(React + vite)의 **빌드 산출물**입니다. `vite.config.ts:10`의
+`base: '/tools/storyboard/'` 설정으로 이 경로에 빌드됩니다. `.gitignore`에도 들어 있습니다.
+고쳐야 하면 `storyboard-app/` 소스를 고치고 다시 빌드하세요.
+
+### 3.3 `stripLeadingNumber()`는 의도적으로 두 벌 있습니다
+
+- `routes/timeline.js:65`
+- `tools/timeline/index.html:385`
+
+정적 페이지와 서버가 모듈을 공유할 수 없어서 복제한 것입니다. **한쪽을 고치면 반드시
+다른 쪽도 같이 고치세요.** 정규식 리터럴이 서로 완전히 같아야 합니다:
+
+```js
+/^\s*[\[(]?\d{1,3}[\])]?[\s._-]+/
+```
+
+(따옴표 스타일만 서버는 `'`, 클라이언트는 `"`로 다릅니다. 정규식 자체는 동일합니다.)
+`normalizeForMatch()`도 같은 이유로 두 벌입니다(`routes/timeline.js:72`,
+`tools/timeline/index.html:396`). 이 둘이 어긋나면 폴더의 실제 파일명과 화면의 곡 제목이
+매칭되지 않아 rename이 조용히 아무 일도 안 하게 됩니다.
+
+### 3.4 셸은 iframe을 `display` 토글로만 전환합니다
+
+`public/shell.js:17` — 5개 iframe이 셸 로드 시 전부 한 번 로드되고, 탭 전환은 `display`만
+바꿉니다. 그래서 탭을 옮겨도 입력 상태가 살아 있습니다. iframe을 매번 다시 로드하는
+방식으로 바꾸지 마세요(사용자가 작업 중이던 내용이 날아갑니다).
+
+도구 사이에 데이터를 주고받아야 하면 iframe → 셸 → iframe의 `postMessage` 중계를 쓰고,
+`origin`을 반드시 검증하세요.
+
+### 3.5 Gemini 키는 `lib/keyStore.js`를 통해서만
+
+`lib/keyStore.js`가 `.gemini_key` 파일 또는 `GEMINI_API_KEY` 환경변수에서 읽어 전 도구가
+공유합니다. **키 값을 API 응답이나 로그에 절대 노출하지 마세요.** 상태 확인은
+`currentKey()`의 불리언 결과만 씁니다.
+
+> 알려진 불일치: `routes/shorts.js:165`는 `keyStore` 대신 `process.env`를 직접 읽습니다.
+> 동작에는 문제가 없지만 shorts를 손볼 일이 있으면 `currentKey()`로 통일하세요.
+
+---
+
+## 4. 외부에 쓰는 기능의 안전 규칙
+
+이 앱은 사용자의 **실제 파일**과 **실제 유튜브 채널**에 씁니다. 아래 패턴은 협상 대상이
+아닙니다.
+
+### 4.1 미리보기 → 적용 2단계
+
+새로 만드는 쓰기 기능도 전부 이 형태여야 합니다. **미리보기 없이 바로 실행되는 경로를
+만들지 마세요.**
+
+- 적용은 **미리본 계획 그대로만** 전송합니다. 적용 시점에 계획을 다시 계산하지 않습니다
+  (`tools/timeline/index.html:361`의 `currentRenamePlan`, `tools/yt/app.js`의
+  `publishState.plan`).
+- 목록·순서·대상이 바뀌면 이전 미리보기를 무효화하고 다시 스캔하게 합니다.
+
+### 4.2 파일명 변경 (`routes/timeline.js`)
+
+`fs.rename`을 호출하는 곳은 `/apply-rename` 하나뿐이고, 클라이언트 미리보기를 신뢰하지
+않고 서버가 전부 재검증합니다: 확장자 화이트리스트(`.wav`/`.mp3`), 원본 존재 확인,
+멱등 스킵, 이름 충돌 감지, 시스템 폴더 차단, 자기 자신 폴더 차단(`assertSafeFolder()`).
+실행 직전 폴더에 `_rename_backup.json`을 남겨 `undo-rename`으로 1단계 되돌립니다.
+**이 검증을 "클라이언트가 이미 확인했으니"라는 이유로 건너뛰지 마세요.**
+
+한 항목이 실패해도 나머지 배치는 계속 진행하고, 실패 사유를 항목별로 보고합니다.
+새 배치 기능도 이 패턴을 따르세요.
+
+### 4.3 `videos.update`는 part를 통째로 교체합니다
+
+값이 있는 속성을 빼고 보내면 **그 값이 삭제됩니다.** 그래서 등록 경로는 항상
+read-modify-write입니다 (`routes/yt.js`의 `/publish-localizations`):
+
+```
+videos.list(part=snippet,localizations)
+  → 기존 title/description/categoryId/tags/localizations 보존
+  → 새 localizations 병합
+  → PUT videos(part=snippet,localizations)
+```
+
+**이 패턴을 절대 단순화하지 마세요.** 영상 제목과 설명이 통째로 날아갑니다.
+`playlists.update`도 같습니다.
+
+### 4.4 유튜브 OAuth
+
+- 쓰기라서 API 키로는 안 됩니다. `youtube.force-ssl` 범위의 OAuth 2.0이 필요합니다.
+- 클라이언트 ID/보안 비밀번호와 refresh token은 `.yt_oauth.json`(mode 600, gitignore)에만
+  저장합니다.
+- 동의 화면이 "테스트" 상태면 구글이 **7일마다 refresh token을 만료**시킵니다. 숨기지
+  말고 UI에 경과일 배지와 `invalid_grant` 전용 안내로 표면화하세요(`lib/ytOAuth.js`).
+- 쿼터: `videos.update` 1회 = **50유닛**, 기본 일일 10,000유닛. 언어를 몇 개 올리든
+  영상 1편당 50유닛입니다.
+
+### 4.5 언어 코드 해석
+
+한국어 라벨(`포르투갈어 (브라질)`) → BCP-47(`pt-BR`) 변환은 `lib/ytLanguages.js`의
+후보 배열에서 하고, 런타임에 `i18nLanguages.list`로 받아온 **실제 지원 목록과 대조**해
+첫 지원 코드를 씁니다(`nl-BE` 미지원 → `nl`). 코드가 겹치면 뒤엣것을 건너뛰고 이유를
+보고합니다. 이 해석 로직을 복사해서 두 벌로 만들지 말고 `planLocalizations()`를
+재사용하세요.
+
+**라벨 문자열은 `tools/yt/app.js`의 `LANGUAGES` 배열과 정확히 일치해야 합니다.** 오타는
+조용히 언어 하나를 누락시킵니다. 새 라벨을 쓸 때는 코드를 읽어서 확인하세요. 추측 금지.
+
+---
+
+## 5. 비밀 정보
+
+절대 커밋하지 않습니다 (`.gitignore` 확인):
+
+```
+.gemini_key  .yt_oauth.json  .timeline-settings.json  .env  .env.local
+node_modules/  output/  tools/storyboard/
+```
+
+문서나 코드 예시에 **실제 키·토큰·클라이언트 시크릿 값을 적지 마세요.** 새 상태 파일을
+만들면 `.gitignore`에 먼저 추가하세요.
+
+---
+
+## 6. 작업 보고 규칙 — 가장 중요
+
+이 프로젝트에서 이미 두 번, 테스트를 전부 통과한 상태로 심각한 버그가 배포됐습니다.
+연번 기능은 화면 문자열만 바꾸고 실제 파일명은 그대로였는데 테스트가 화면 문자열만
+봤기 때문에 통과했습니다.
+
+그래서:
+
+1. **테스트 통과 개수만 보고하지 마세요.** 그건 완료 보고가 아닙니다.
+2. **실제 생성된 출력 샘플을 붙이세요.** 타임라인 텍스트 3줄, API 응답 JSON 전문,
+   번역 결과, 조립된 설명란 등 사람이 눈으로 읽고 틀린 걸 알아챌 수 있는 것.
+3. **실행해 보지 않고 "동작할 것입니다"라고 쓰지 마세요.** 실행할 수 없는 이유가
+   있으면 그 이유를 명시하세요.
+4. 외부 API 동작이나 스펙은 **기억에 의존하지 말고** 공식 문서를 확인하고 근거를
+   제시하세요.
+5. 지시받지 않은 리팩터링을 끼워 넣지 마세요. 필요하다고 판단되면 먼저 제안하세요.
+
+---
+
+## 7. 커밋·버전 관례
+
+- 기능 변경 시 버전을 올립니다: `CS-v1.7`, `CS-v1.8` …
+- 커밋 메시지: `feat: 영문 한 줄 요약 (CS-vX.Y)` + 본문에 **왜** 그렇게 했는지.
+  `fix:`, `docs:`, `refactor:`도 같은 형식입니다.
+- 코드 주석에 `TASK CS-vX.Y` 형태로 결정의 이유를 남기는 것이 이 저장소의 관행입니다.
+  "무엇을 하는지"가 아니라 **"왜 이렇게 했는지, 왜 다른 방법을 안 썼는지"**를 씁니다.
+  기존 예시: `routes/timeline.js` 상단 블록, `lib/ytOAuth.js` 상단 블록,
+  `routes/yt.js`의 `videos.update` 설명 블록.
+- 커밋 이력을 rebase/squash로 고쳐쓰지 마세요.
+- `git push --force`는 사용자 확인 없이 실행하지 마세요.
+
+---
+
+## 8. 로드맵
+
+`docs/ROADMAP.md`에 지시문 11개가 순서대로 있습니다. 한 지시문 = 한 작업 = 한 커밋이
+원칙입니다. 여러 개를 한 번에 처리하지 마세요.
