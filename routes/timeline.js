@@ -7,6 +7,7 @@ import fsp from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Type } from '@google/genai';
 import { requireGeminiClient, withRetry } from '../lib/gemini.js';
+import { lintPack } from '../lib/titleLint.js';
 
 /**
  * TASK CS-v1.2 — the timeline tool's CS-v1.1 auto-numbering only ever
@@ -136,67 +137,140 @@ async function writeSettings(patch) {
   return next;
 }
 
+const TARGET_LABELS = { ko: '한국어(Korean)', ja: '일본어(Japanese)' };
+
+/**
+ * Of the 3 candidate phrasings per song, the longest (by non-space character
+ * count) is kept: a bare dictionary compound ("앨범 먼지") is short almost by
+ * definition, while a scene-and-time phrasing needs enough words to hold a
+ * verb ending or a connective, so picking the longest candidate is a cheap
+ * proxy for "not a literal gloss".
+ */
+function longestCandidate(candidates) {
+  const list = Array.isArray(candidates) ? candidates.map((c) => String(c || '').trim()).filter(Boolean) : [];
+  if (!list.length) return '';
+  return list.reduce((best, cur) => (cur.replace(/\s/g, '').length > best.replace(/\s/g, '').length ? cur : best));
+}
+
+/**
+ * TASK CS-v1.7 — a longer prompt with an 8-pair GOOD/BAD table was tried
+ * first and made output WORSE, not better: with that many examples in
+ * context (several sharing exact words with real test titles), the model
+ * anchored on the nearby literal text instead of the instruction and just
+ * echoed it. A short prompt with a single example pair reliably produced
+ * genuine scene-based titles in side-by-side testing on both the original
+ * failing titles and titles never seen before. Do not re-expand this — it
+ * was tried and made things worse.
+ *
+ * `rejected` (optional, Map<index-in-`titles`, previous literal attempt>) is
+ * only set on the lint-triggered retry: it names the exact rejected output
+ * so the model isn't just asked to "be better" in the abstract, which is
+ * the same failure this prompt already had to fix once.
+ */
+function buildPrompt(titles, target, rejected) {
+  const targetLabel = TARGET_LABELS[target];
+  const rejectedBlock = rejected && rejected.size
+    ? `\nSome of these were already attempted and REJECTED for being literal dictionary translations, not song titles. Do not repeat them — write something genuinely different in structure.\n${[...rejected.entries()].map(([i, prev]) => `  index ${i} rejected attempt: "${prev}"`).join('\n')}\n`
+    : '';
+  return `You are naming songs for a nostalgic YouTube playlist aimed at older Korean and Japanese listeners (60s-70s). The channel plays warm, calm music for the morning or for a quiet cafe.
+
+Target language: ${targetLabel}
+
+Your job is NOT translation. The English title is a seed image, not a phrase to convert. Write the title a ${targetLabel} songwriter would have given this song — put the listener inside a remembered scene or a moment in time, concrete and personal, not a label on an object.
+
+GOOD: Firstlight Cup -> 새벽에 마시는 한 잔
+BAD (a literal dictionary compound, never do this): Firstlight Cup -> 새벽빛 찻잔
+${rejectedBlock}
+RULES
+1. Return exactly ${titles.length} objects. "index" is the input's 0-based index.
+2. "candidates" must contain exactly 3 DIFFERENT phrasings of the same scene — vary sentence structure and length, don't just swap one word. A verb ending or connective ("~던", "~하면", "~ば", "~た") usually reads better than a bare noun phrase.
+3. Ignore any leading track number ("01.", "(3)") and any trailing duplicate marker such as "(1)" or "(2)" from a filename copy. Never reproduce them.
+4. Warm and gentle in register. No slang, no English loanwords unless fully naturalized, no exclamation marks, no quotation marks.
+5. Do not invent a specific named person or relative that the seed does not imply.
+6. All ${titles.length} songs must end up with different titles from each other.
+7. If the original title is already written in ${targetLabel}, return three empty strings for "candidates".
+8. Output only the JSON. No commentary.
+
+Song titles:
+${titles.map((t, i) => `${i}. ${t}`).join('\n')}`;
+}
+
+/** One Gemini call for a batch of titles. Returns an array of localized strings, same order/length as `titles`. */
+async function requestTitleCandidates(ai, titles, target, rejected) {
+  const response = await withRetry(() => ai.models.generateContent({
+    model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
+    contents: buildPrompt(titles, target, rejected),
+    config: {
+      temperature: 1.0,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            index: { type: Type.NUMBER },
+            candidates: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: ['index', 'candidates'],
+        },
+      },
+    },
+  }));
+  const parsed = JSON.parse(String(response.text || '[]'));
+  if (!Array.isArray(parsed)) throw httpError('AI 응답 형식이 올바르지 않습니다.', 502);
+  // Index-keyed rather than positional: a short or reordered response then
+  // leaves the untouched rows blank instead of shifting every later title
+  // onto the wrong song.
+  const byIndex = new Map(parsed.map((item) => [Number(item?.index), longestCandidate(item?.candidates)]));
+  return titles.map((_, i) => byIndex.get(i) || '');
+}
+
 /**
  * TASK CS-v1.6 — the timeline can now print a bracketed second-language title
  * next to each song ("01. Morning Light (아침의 빛)"). Typing 60 of those by
  * hand per pack is the whole reason this route exists: it localizes the track
  * titles in one batch call.
  *
- * These are *song titles for a playlist description*, not prose — so the
- * prompt asks for a natural, singable-sounding title in the target language
- * rather than a literal gloss, and returns an empty string rather than
- * inventing something when a title is already in the target language (the
- * client then just prints the title alone, with no empty parentheses).
+ * TASK CS-v1.7 — prompt tuning alone was tried and does not reliably prevent
+ * literal dictionary-compound output (see buildPrompt()'s comment and
+ * lib/titleLint.js's file header for what was tried and why it wasn't
+ * trusted on its own). So the result is also linted in code: any title that
+ * lintPack() flags gets ONE automatic re-request naming the rejected
+ * attempt, and anything still flagged after that retry is reported back in
+ * `lintWarnings` (0-based indices into `titles`) rather than silently
+ * accepted — the client shows a warning badge on those so the user can fix
+ * them by hand or hit regenerate again. No further auto-retries: an
+ * unbounded retry loop against a model that keeps producing the same
+ * failure mode just burns quota for no gain.
+ *
+ * Returns an empty string rather than inventing something when a title is
+ * already in the target language (the client then prints the title alone,
+ * with no empty parentheses) — lintPack() treats empty strings as a pass.
  */
 router.post('/translate-titles', async (req, res, next) => {
   try {
     const titles = Array.isArray(req.body?.titles) ? req.body.titles.map((x) => String(x || '')) : [];
     const target = String(req.body?.target || '').trim();
-    const TARGETS = { ko: '한국어(Korean)', ja: '일본어(Japanese)' };
     if (!titles.length) throw httpError('번역할 제목이 없습니다.');
     if (titles.length > 120) throw httpError('한 번에 최대 120곡까지 처리할 수 있습니다.');
-    if (!TARGETS[target]) throw httpError('대상 언어는 ko 또는 ja만 지원합니다.');
+    if (!TARGET_LABELS[target]) throw httpError('대상 언어는 ko 또는 ja만 지원합니다.');
 
     const ai = requireGeminiClient();
-    const prompt = `You are localizing song titles for a YouTube playlist description.
+    const results = await requestTitleCandidates(ai, titles, target);
 
-Target language: ${TARGETS[target]}
+    let lint = lintPack(titles, results, target);
+    const failedIndices = lint.filter((r) => r.failed).map((r) => r.index);
 
-Rules:
-1. Return exactly ${titles.length} objects, in the same order as the input list.
-2. "index" must be the input's 0-based index.
-3. "title" is the localized song title: natural, short, and song-like — not a literal word-for-word gloss and not an explanation.
-4. Ignore and do NOT reproduce any leading track number such as "01." or "(3)".
-5. If the original title is already written in the target language, return an empty string for "title".
-6. Keep proper nouns, place names, and artist names in their standard localized form.
-7. No quotation marks, no commentary, no extra punctuation.
+    if (failedIndices.length) {
+      const retryTitles = failedIndices.map((i) => titles[i]);
+      const rejected = new Map(failedIndices.map((i, j) => [j, results[i]]));
+      const retryResults = await requestTitleCandidates(ai, retryTitles, target, rejected);
+      failedIndices.forEach((origIndex, j) => { results[origIndex] = retryResults[j]; });
+      lint = lintPack(titles, results, target);
+    }
 
-Song titles:
-${titles.map((t, i) => `${i}. ${t}`).join('\n')}`;
-
-    const response = await withRetry(() => ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: { index: { type: Type.NUMBER }, title: { type: Type.STRING } },
-            required: ['index', 'title'],
-          },
-        },
-      },
-    }));
-
-    const parsed = JSON.parse(String(response.text || '[]'));
-    if (!Array.isArray(parsed)) throw httpError('AI 응답 형식이 올바르지 않습니다.', 502);
-    // Index-keyed rather than positional: a short or reordered response then
-    // leaves the untouched rows blank instead of shifting every later title
-    // onto the wrong song.
-    const byIndex = new Map(parsed.map((item) => [Number(item?.index), String(item?.title || '').trim()]));
-    res.json({ target, titles: titles.map((_, i) => byIndex.get(i) || '') });
+    const lintWarnings = lint.filter((r) => r.failed).map((r) => r.index);
+    res.json({ target, titles: results, lintWarnings });
   } catch (error) { next(error); }
 });
 

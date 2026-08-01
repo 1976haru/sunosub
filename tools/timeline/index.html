@@ -15,6 +15,8 @@
       --primary-dark: #3730a3;
       --danger: #b42318;
       --success: #087a55;
+      --warning: #b45309;
+      --warning-bg: #fffbeb;
     }
     * { box-sizing: border-box; }
     body {
@@ -107,6 +109,25 @@
     }
     .status.error { color: var(--danger); }
     .status.success { color: var(--success); }
+    .bracket-field { margin-bottom: 4px; }
+    .bracket-field-row { display: flex; gap: 4px; align-items: center; }
+    .bracket-field-row input { flex: 1; }
+    .regen-btn {
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 400;
+      background: #eef2f6;
+      flex: none;
+    }
+    .lint-warning {
+      color: var(--warning);
+      background: var(--warning-bg);
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      margin-top: 2px;
+    }
     .table-wrap { overflow-x: auto; }
     table {
       width: 100%;
@@ -649,6 +670,7 @@
   async function fillBracketTitles(target) {
     if (!tracks.length) return setBracketStatus("먼저 곡을 추가해 주세요.", "error");
     const field = target === "ko" ? "titleKo" : "titleJa";
+    const warnField = target === "ko" ? "titleKoWarn" : "titleJaWarn";
     const label = target === "ko" ? "한국어" : "일본어";
     setBracketStatus(`${tracks.length}곡의 ${label} 제목을 만드는 중…`);
     try {
@@ -659,18 +681,48 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "제목을 만들지 못했습니다.");
+      const warned = new Set(data.lintWarnings || []);
       let filled = 0;
       data.titles.forEach((value, index) => {
-        if (!tracks[index] || !value) return;
+        if (!tracks[index]) return;
+        tracks[index][warnField] = warned.has(index);
+        if (!value) return;
         tracks[index][field] = value;
         filled++;
       });
       renderTracks();
       setBracketStatus(
-        filled === tracks.length
+        filled === tracks.length && !warned.size
           ? `${filled}곡의 ${label} 제목을 채웠습니다.`
-          : `${filled}/${tracks.length}곡을 채웠습니다. 나머지는 이미 ${label}이거나 AI가 비워 둔 곡입니다.`,
-        "success"
+          : `${filled}/${tracks.length}곡을 채웠습니다.${warned.size ? ` ${warned.size}곡은 직역 의심으로 표시됐습니다 — 직접 고치거나 ↻로 다시 만들어 보세요.` : " 나머지는 이미 " + label + "이거나 AI가 비워 둔 곡입니다."}`,
+        warned.size ? "" : "success"
+      );
+    } catch (err) {
+      setBracketStatus(err.message, "error");
+    }
+  }
+
+  /** TASK CS-v1.7 — regenerates just one song's bracket title via the same /translate-titles route, instead of a new endpoint. */
+  async function regenerateBracketTitle(index, target) {
+    const track = tracks[index];
+    if (!track) return;
+    const field = target === "ko" ? "titleKo" : "titleJa";
+    const warnField = target === "ko" ? "titleKoWarn" : "titleJaWarn";
+    setBracketStatus(`"${stripLeadingNumber(track.title)}" 다시 만드는 중…`);
+    try {
+      const res = await fetch("/api/timeline/translate-titles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, titles: [stripLeadingNumber(track.title)] })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "제목을 만들지 못했습니다.");
+      track[warnField] = (data.lintWarnings || []).includes(0);
+      if (data.titles[0]) track[field] = data.titles[0];
+      renderTracks();
+      setBracketStatus(
+        track[warnField] ? "다시 만들었지만 여전히 직역 의심입니다 — 직접 고쳐 주세요." : "다시 만들었습니다.",
+        track[warnField] ? "" : "success"
       );
     } catch (err) {
       setBracketStatus(err.message, "error");
@@ -906,17 +958,34 @@
       if (bracketMode() === "none") {
         bracketTd.classList.add("hidden");
       } else {
-        const fields = bracketMode() === "ko" ? [["titleKo", "한국어 제목"]]
-          : bracketMode() === "ja" ? [["titleJa", "日本語 제목"]]
-          : [["titleKo", "한국어 제목"], ["titleJa", "日本語 제목"]];
-        fields.forEach(([field, placeholder]) => {
+        const fields = bracketMode() === "ko" ? [["titleKo", "titleKoWarn", "ko", "한국어 제목"]]
+          : bracketMode() === "ja" ? [["titleJa", "titleJaWarn", "ja", "日本語 제목"]]
+          : [["titleKo", "titleKoWarn", "ko", "한국어 제목"], ["titleJa", "titleJaWarn", "ja", "日本語 제목"]];
+        fields.forEach(([field, warnField, target, placeholder]) => {
+          const wrap = document.createElement("div");
+          wrap.className = "bracket-field";
+          const row = document.createElement("div");
+          row.className = "bracket-field-row";
           const input = document.createElement("input");
           input.type = "text";
           input.value = track[field] || "";
           input.placeholder = placeholder;
-          input.style.marginBottom = "4px";
           input.addEventListener("input", () => { track[field] = input.value; });
-          bracketTd.appendChild(input);
+          const regen = document.createElement("button");
+          regen.type = "button";
+          regen.className = "regen-btn";
+          regen.textContent = "↻";
+          regen.title = `${placeholder} 다시 만들기`;
+          regen.addEventListener("click", () => regenerateBracketTitle(index, target));
+          row.append(input, regen);
+          wrap.appendChild(row);
+          if (track[warnField]) {
+            const warn = document.createElement("div");
+            warn.className = "lint-warning";
+            warn.textContent = "⚠ 직역 의심 — 확인해 주세요";
+            wrap.appendChild(warn);
+          }
+          bracketTd.appendChild(wrap);
         });
       }
 
