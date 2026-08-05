@@ -1,0 +1,65 @@
+{
+  "_note": "아래 값은 초기 추정값이며 실제 카드 샘플을 눈으로 확인하며 조정해야 한다. 검증된 값이 아니다.",
+  "canvas": {
+    "sizePreset": "4:5",
+    "sizes": {
+      "4:5": { "width": 1080, "height": 1350 },
+      "1:1": { "width": 1080, "height": 1080 }
+    }
+  },
+  "output": {
+    "format": "jpeg",
+    "quality": 90,
+    "maxFileSizeBytes": 2097152,
+    "qualityRetryMax": 3,
+    "qualityStep": 15,
+    "minQuality": 40
+  },
+  "fonts": {
+    "serifKr": { "file": "NotoSerifKR-Regular.otf", "family": "Noto Serif KR" },
+    "sansKr": { "file": "NotoSansKR-Regular.otf", "family": "Noto Sans KR" },
+    "serifJp": { "file": "NotoSerifJP-Regular.otf", "family": "Noto Serif JP" }
+  },
+  "margins": {
+    "outer": 72,
+    "lineGap": 14
+  },
+  "cover": {
+    "textAreaHeightRatio": 0.3333,
+    "overlayOpacity": 0.55,
+    "conceptFontSize": 34,
+    "titleFontSize": 60,
+    "trackCountFontSize": 30,
+    "minTitleFontSize": 34,
+    "titleFont": "serifKr",
+    "metaFont": "sansKr"
+  },
+  "tracklist": {
+    "tracksPerCard": 6,
+    "headerFontSize": 32,
+    "rowFontSize": 58,
+    "rowGap": 36,
+    "showOriginalTitle": false,
+    "originalTitleFontSize": 28,
+    "titleFont": "sansKr",
+    "originalTitleFont": "sansKr"
+  },
+  "cta": {
+    "fontSize": 46,
+    "font": "serifKr"
+  },
+  "textFit": {
+    "maxLineWrapWidthRatio": 0.86,
+    "maxShrinkAttempts": 8,
+    "minFontSizeRatio": 0.55,
+    "fontSizeStepRatio": 0.9
+  },
+  "luminance": {
+    "lowerPercentile": 25,
+    "upperPercentile": 75,
+    "brightThreshold": 140,
+    "ambiguousBand": 25,
+    "overlayOpacityWhenAmbiguous": 0.5,
+    "maxSampledPixels": 200000
+  }
+}
