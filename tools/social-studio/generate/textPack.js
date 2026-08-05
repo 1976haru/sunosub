@@ -314,5 +314,7 @@ export function runTextPackPipeline(normalized, options = {}) {
   fs.writeFileSync(path.join(outDir, 'textpack.json'), JSON.stringify(textpack, null, 2) + '\n', 'utf8');
   fs.writeFileSync(path.join(outDir, 'textpack.md'), markdown, 'utf8');
 
+  if (options.onAfterGenerate) options.onAfterGenerate({ textpack, outDir, normalized }); // TASK-S3 lint/regenerate hook — this file never imports lint/socialLint.js itself
+
   return { textpack, markdown, outDir };
 }

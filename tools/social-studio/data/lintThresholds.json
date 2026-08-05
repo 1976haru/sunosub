@@ -1,0 +1,10 @@
+{
+  "_note": "아래 값은 초기 추정값이며 실제 운영 데이터로 조정해야 한다. 검증된 값이 아니다.",
+  "R1_crossChannelSimilarity": 0.60,
+  "R2_templateReuseWeeks": 4,
+  "R3_hashtagOverlapRatio": 0.80,
+  "R6_maxPostsPer24h": 2,
+  "R7_maxNounRepeat": 3,
+  "regenerateMaxAttempts": 5,
+  "historyMaxEntries": 200
+}

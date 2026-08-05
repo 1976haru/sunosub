@@ -202,11 +202,67 @@ S0 완료 조건 5번("`nouns.json`을 비우면 `coverage.nouns`가 0에 가깝
   제목·설명은 S1에서 새로 만든다.
 - `set.assets.shorts[]`는 스키마에 자리만 정의되어 있고 S0는 값을 채우지 않는다. S4에서
   구현한다.
-- S2(화면), S3(중복 검사), S5(발행)는 이 문서의 범위 밖이다.
+- S2(화면), S5(발행)는 이 문서의 범위 밖이다. S3(중복·규칙 검사)은 11장 참조.
 
 ---
 
-## 10. 샘플 데이터에 대한 메모
+## 11. socialLint — 중복·규칙 검사 (S3)
+
+`lint/socialLint.js`가 `out/{setName}/textpack.json`(또는 편집본)을 읽어 규칙 7개(R1~R7)를
+검사하고 `out/{setName}/lint-report.json`을 쓴다. 규칙별 임계값은 전부
+`data/lintThresholds.json`에서 읽으며, 코드에 숫자를 하드코딩하지 않는다.
+
+### 규칙과 데이터 출처
+
+| 규칙 | 파일 | severity | 비교 대상 |
+|---|---|---|---|
+| R1 채널 간 유사도 | `lint/rules/crossChannel.js` | error | 같은 주차 다른 채널의 **실제 `textpack.json`을 직접 읽어** 비교 (지문이 아니라 원문 대 원문) |
+| R2 템플릿 재사용 | `lint/rules/templateReuse.js` | error→warn(소진 시) | `store/lintHistory.json`의 `templateIds` |
+| R3 해시태그 중복 | `lint/rules/hashtagOverlap.js` | warn | `store/lintHistory.json`의 `hashtags` |
+| R4 플랫폼 규격 | `lint/rules/platformRules.js` | error | `data/platformLimits.json` (S1 소유, 값을 다시 적지 않음) |
+| R5 금지 표현 | `lint/rules/bannedPhrases.js` | warn | `data/bannedPhrases.json` |
+| R6 발행 간격 | `lint/rules/postingCadence.js` | warn | `store/lintHistory.json` + `resolvePostingDate()` |
+| R7 캡션 내 반복 | `lint/rules/wordRepetition.js` | warn | 없음(항목 자체 스캔) |
+
+**R1이 `lintHistory.json`을 거치지 않는 이유**: "같은 주차"는 정의상 아직 지나지 않은
+시간이므로 다른 채널의 실제 `out/{setName}/textpack.json`이 디스크에 그대로 있다. 지문으로
+낮춰 비교할 이유가 없어 원문 대 원문(정확한 Jaccard)으로 비교한다. R2·R3는 여러 주에 걸친
+비교라 `lintHistory.json`에 남긴 지문/ID만 쓴다 — 원문 자체는 저장하지 않는다
+(`lint/similarity.js`의 `contentFingerprint()`, FNV-1a 8자리 해시).
+
+### R2의 알려진 한계 — S1이 아직 `templateId`를 기록하지 않는다
+
+`textpack.json`은 현재 각 항목의 `text`만 담고 있고, 생성에 실제 쓰인 `templateId`는
+버려진다(`generate/*.js`가 내부적으로는 `{id, text}`를 만들지만 최종 출력에는 `text`만
+남긴다). S3 지시문 자체가 이 상황을 예상하고 명시적 대응을 요구했다: **"S1이 사용한
+templateId를 기록하고 있어야 한다. 없으면 S1 미완료로 보고한다."**
+
+그래서 `templateReuse.js`는 `textpack.templateIds`가 없으면 즉시 `notes`에 "S1
+미완료"라고 남기고 통과 처리한다 — 실패도, 조용한 무시도 아니다. 규칙 로직 자체는
+합성(fixture) `templateIds`로 완전히 검증되어 있다(테스트 참조). "기존 파일 수정은
+라우팅·호출 등록 1줄만 허용"이라는 이번 지시문의 범위 제한 때문에 S1의 생성 로직을
+바꾸지 않았다 — `templateId` 기록은 S1을 다시 여는 별도 작업으로 남겨둔다.
+
+### R7 — 왜 한글 음절에만 적용하는가
+
+초판은 `[가-힣A-Za-z]+`로 토큰을 잡았는데, 실제 샘플 세트로 돌려보니 `naver.bodyHtml`의
+`<li>` 태그가 "li"라는 단어가 36번 반복된 것으로 잡히고, `{titleEn}` 슬롯에 그대로 남는
+영어 원곡 제목("Never", "Neon", "Neighborhood")이 "Ne로 시작하는 단어 반복"으로 잘못
+묶였다. 영어 2글자는 한글 2음절만큼 정보량이 없어서 생기는 문제였다. 토큰 정규식을
+`[가-힣]+`로 좁혀 해결했다 — spec 자체가 "명사"·"음절" 기준을 한국어 전제로 설명하고
+있어 이 범위 축소가 규칙의 의도에 더 맞는다.
+
+### 재생성 연동 (`runLintWithRegeneration`)
+
+`lint/socialLint.js`는 생성기를 직접 import하지 않는다. `runLintWithRegeneration(setName,
+regenerateFn, options)`가 재검사 루프를 갖고 있지만, 실제로 텍스트를 다시 만드는 함수는
+호출자가 주입한다. `generate/textPack.js`의 `runTextPackPipeline()`에는 이번 작업에서
+허용된 "호출 등록 1줄"로 `options.onAfterGenerate` 훅만 추가했다 — S1은 S3를 모르고, S3도
+S1의 생성 로직을 모른다.
+
+---
+
+## 12. 샘플 데이터에 대한 메모
 
 이 저장소에는 TASK-S0 지시문이 근거로 든 실제 샘플 파일
 (`20260804_굿모닝추억라디오_70년대감성.json`, 58,085 bytes)이 존재하지 않았다.
