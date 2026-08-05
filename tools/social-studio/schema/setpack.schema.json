@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://creator-studio.local/social-studio/setpack.schema.json",
+  "title": "Suno Weaver Studio setpack (social-studio input)",
+  "description": "Reference schema for the songset JSON that Suno Weaver Studio exports. This file documents the contract; parse/setPackLoader.js performs the actual runtime validation by hand (no schema-validator dependency is added to package.json).",
+  "type": "object",
+  "required": ["meta", "songs"],
+  "additionalProperties": true,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["setName", "channelId", "channelLabel", "songCount", "lyricLanguage"],
+      "properties": {
+        "setName": { "type": "string", "minLength": 1 },
+        "generatedAt": { "type": "string" },
+        "channelId": { "type": "string", "minLength": 1 },
+        "channelLabel": { "type": "string", "minLength": 1 },
+        "conceptLabel": { "type": "string" },
+        "songCount": { "type": "integer", "minimum": 0 },
+        "lyricLanguage": { "type": "string", "enum": ["english", "korean", "japanese"] }
+      }
+    },
+    "songs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/song" }
+    }
+  },
+  "$defs": {
+    "song": {
+      "type": "object",
+      "required": ["trackNo", "title", "titleLocalized", "listenerSituation", "emotionArc", "hookPhrase", "lyrics"],
+      "properties": {
+        "trackNo": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "titleLocalized": { "type": "string", "minLength": 1 },
+        "seasonMoment": { "type": "string" },
+        "listenerSituation": { "type": "string", "minLength": 1 },
+        "emotionArc": { "type": "string", "minLength": 1 },
+        "hookPhrase": { "type": "string", "minLength": 1 },
+        "stylePrompt": { "type": "string" },
+        "excludePrompt": { "type": "string" },
+        "lyrics": { "type": "string", "minLength": 1 },
+        "youtube": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

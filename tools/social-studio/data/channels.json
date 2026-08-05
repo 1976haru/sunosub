@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "_comment": "channelId -> social-studio output language. 'type': 'exact' matches the whole channelId; 'prefix' matches any channelId starting with 'match'. Checked in array order; first match wins. Unknown channelId must error — see resolveChannelLanguage() in parse/setPackLoader.js.",
+  "mappings": [
+    { "match": "good-morning-memory-radio", "type": "exact", "language": "ko" },
+    { "match": "senior-oldpop", "type": "exact", "language": "ko" },
+    { "match": "kr-", "type": "prefix", "language": "ko" },
+    { "match": "jp-", "type": "prefix", "language": "ja" }
+  ]
+}

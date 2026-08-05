@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "entries": {
+    "aimless freedom": {
+      "ko": "정처 없는 자유로움",
+      "category": "emotion"
+    },
+    "anticipation": {
+      "ko": "설렘",
+      "category": "emotion"
+    },
+    "calm belonging": {
+      "ko": "차분한 소속감",
+      "category": "emotion"
+    },
+    "calm wonder": {
+      "ko": "차분한 경이로움",
+      "category": "emotion"
+    },
+    "carefree delight": {
+      "ko": "걱정 없는 즐거움",
+      "category": "emotion"
+    },
+    "certainty": {
+      "ko": "확신",
+      "category": "emotion"
+    },
+    "chaotic noise": {
+      "ko": "어수선한 소란",
+      "category": "emotion"
+    },
+    "curious wonder": {
+      "ko": "호기심 어린 경이로움",
+      "category": "emotion"
+    },
+    "easy laughter": {
+      "ko": "편안한 웃음",
+      "category": "emotion"
+    },
+    "electric excitement": {
+      "ko": "짜릿한 설렘",
+      "category": "emotion"
+    },
+    "free-wheeling joy": {
+      "ko": "거침없는 기쁨",
+      "category": "emotion"
+    },
+    "full-hearted belonging": {
+      "ko": "온 마음의 소속감",
+      "category": "emotion"
+    },
+    "giddy readiness": {
+      "ko": "들뜬 채비",
+      "category": "emotion"
+    },
+    "grateful stillness": {
+      "ko": "감사한 고요함",
+      "category": "emotion"
+    },
+    "gratitude": {
+      "ko": "고마움",
+      "category": "emotion"
+    },
+    "homesick uncertainty": {
+      "ko": "향수 어린 막막함",
+      "category": "emotion"
+    },
+    "long winter heaviness": {
+      "ko": "긴 겨울의 무거움",
+      "category": "emotion"
+    },
+    "mild surprise": {
+      "ko": "은은한 놀라움",
+      "category": "emotion"
+    },
+    "nervous energy": {
+      "ko": "들뜬 긴장감",
+      "category": "emotion"
+    },
+    "nervous risk": {
+      "ko": "위태로운 긴장감",
+      "category": "emotion"
+    },
+    "nervous shyness": {
+      "ko": "긴장된 수줍음",
+      "category": "emotion"
+    },
+    "open relief": {
+      "ko": "열린 안도감",
+      "category": "emotion"
+    },
+    "ordinary routine": {
+      "ko": "평범한 일상",
+      "category": "emotion"
+    },
+    "ordinary tiredness": {
+      "ko": "평범한 피로",
+      "category": "emotion"
+    },
+    "private ache": {
+      "ko": "은밀한 아픔",
+      "category": "emotion"
+    },
+    "pure joy": {
+      "ko": "순수한 기쁨",
+      "category": "emotion"
+    },
+    "quiet awe": {
+      "ko": "조용한 경이로움",
+      "category": "emotion"
+    },
+    "quiet hope": {
+      "ko": "조용한 희망",
+      "category": "emotion"
+    },
+    "quiet nervousness": {
+      "ko": "조용한 긴장감",
+      "category": "emotion"
+    },
+    "relieved hope": {
+      "ko": "안도 섞인 희망",
+      "category": "emotion"
+    },
+    "restlessness": {
+      "ko": "들썩임",
+      "category": "emotion"
+    },
+    "sharp ache": {
+      "ko": "날카로운 아픔",
+      "category": "emotion"
+    },
+    "sleepy heaviness": {
+      "ko": "나른한 무거움",
+      "category": "emotion"
+    },
+    "steady comfort": {
+      "ko": "차분한 편안함",
+      "category": "emotion"
+    },
+    "sticky-hot restlessness": {
+      "ko": "후텁지근한 들썩임",
+      "category": "emotion"
+    },
+    "warm certainty": {
+      "ko": "따뜻한 확신",
+      "category": "emotion"
+    }
+  }
+}

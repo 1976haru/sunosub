@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "entries": {
+    "blooming": {
+      "ko": "피어나며",
+      "category": "emotion"
+    },
+    "building": {
+      "ko": "차오르며",
+      "category": "emotion"
+    },
+    "deepening": {
+      "ko": "깊어지며",
+      "category": "emotion"
+    },
+    "easing": {
+      "ko": "누그러지며",
+      "category": "emotion"
+    },
+    "exploding": {
+      "ko": "터지며",
+      "category": "emotion"
+    },
+    "lifting": {
+      "ko": "걷히며",
+      "category": "emotion"
+    },
+    "lighting up": {
+      "ko": "밝아지며",
+      "category": "emotion"
+    },
+    "melting": {
+      "ko": "녹아들며",
+      "category": "emotion"
+    },
+    "opening": {
+      "ko": "풀리며",
+      "category": "emotion"
+    },
+    "settling": {
+      "ko": "가라앉으며",
+      "category": "emotion"
+    },
+    "softening": {
+      "ko": "부드러워지며",
+      "category": "emotion"
+    },
+    "turning": {
+      "ko": "바뀌며",
+      "category": "emotion"
+    },
+    "warming": {
+      "ko": "따뜻해지며",
+      "category": "emotion"
+    }
+  }
+}

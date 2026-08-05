@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://creator-studio.local/social-studio/normalized.schema.json",
+  "title": "social-studio normalized intermediate representation (S0 output)",
+  "description": "Reference schema for normalized.json, the output of parse/setPackLoader.js. Consumed by S1 (text-pack generator). Documents the contract; not wired to a schema-validator dependency.",
+  "type": "object",
+  "required": ["set", "songs"],
+  "properties": {
+    "set": {
+      "type": "object",
+      "required": ["setName", "channelId", "channelLabel", "outputLanguage", "lyricLanguage", "trackCount", "titlesKo", "dominantEmotions", "sceneNouns", "warnings"],
+      "properties": {
+        "setName": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "channelId": { "type": "string" },
+        "channelLabel": { "type": "string" },
+        "conceptLabel": { "type": "string" },
+        "outputLanguage": { "type": "string", "enum": ["ko", "ja"] },
+        "lyricLanguage": { "type": "string" },
+        "trackCount": { "type": "integer" },
+        "titlesKo": { "type": "array", "items": { "type": "string" } },
+        "dominantEmotions": { "type": "array", "items": { "type": "string" }, "maxItems": 3 },
+        "sceneNouns": { "type": "array", "items": { "type": "string" }, "maxItems": 12 },
+        "seasonHint": {
+          "type": ["object", "null"],
+          "properties": {
+            "raw": { "type": "string" },
+            "ko": { "type": ["string", "null"] },
+            "promoted": { "type": "boolean" }
+          }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "assets": {
+          "type": "object",
+          "description": "Reserved for a future step (S4). Not populated by S0.",
+          "properties": {
+            "shorts": {
+              "type": "array",
+              "description": "Placeholder for future per-song short-form video asset references. Empty in S0.",
+              "items": { "type": "object" }
+            }
+          }
+        }
+      }
+    },
+    "songs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trackNo", "title", "titleLocalized", "listenerSituation", "emotionArc", "hookPhrase", "lyrics"],
+        "properties": {
+          "trackNo": { "type": "integer" },
+          "title": { "type": "string" },
+          "titleLocalized": { "type": "string" },
+          "seasonMoment": {
+            "type": ["string", "null"],
+            "description": "Present only when this song's seasonMoment differs from the set-wide value (which is promoted to set.seasonHint instead)."
+          },
+          "listenerSituation": {
+            "type": "object",
+            "properties": {
+              "raw": { "type": "string" },
+              "matchedTerms": { "type": "array", "items": { "type": "object" } },
+              "unknownTerms": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "emotionArc": {
+            "type": "object",
+            "properties": {
+              "raw": { "type": "string" },
+              "parsed": { "type": "boolean" },
+              "from": { "type": ["object", "null"] },
+              "transition": { "type": ["object", "null"] },
+              "to": { "type": ["object", "null"] },
+              "joiner": { "type": ["string", "null"] }
+            }
+          },
+          "hookPhrase": { "type": "string" },
+          "stylePrompt": { "type": ["string", "null"] },
+          "excludePrompt": { "type": ["string", "null"] },
+          "lyrics": { "type": "string" },
+          "youtube": { "type": ["object", "null"] }
+        }
+      }
+    }
+  }
+}

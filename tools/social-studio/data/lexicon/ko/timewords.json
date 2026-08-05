@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "entries": {
+    "after": {
+      "ko": "~ 이후",
+      "category": "time"
+    },
+    "afternoon": {
+      "ko": "오후",
+      "category": "time"
+    },
+    "day": {
+      "ko": "하루",
+      "category": "time"
+    },
+    "evening": {
+      "ko": "저녁",
+      "category": "time"
+    },
+    "first frost": {
+      "ko": "첫서리",
+      "category": "season"
+    },
+    "first light": {
+      "ko": "동틀 무렵",
+      "category": "time"
+    },
+    "frost": {
+      "ko": "서리",
+      "category": "season"
+    },
+    "late summer opening": {
+      "ko": "늦여름의 시작",
+      "category": "season"
+    },
+    "morning": {
+      "ko": "아침",
+      "category": "time"
+    },
+    "night": {
+      "ko": "밤",
+      "category": "time"
+    },
+    "summer": {
+      "ko": "여름",
+      "category": "season"
+    },
+    "while": {
+      "ko": "~하는 동안",
+      "category": "time"
+    },
+    "winter": {
+      "ko": "겨울",
+      "category": "season"
+    }
+  }
+}

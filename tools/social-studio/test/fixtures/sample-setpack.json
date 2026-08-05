@@ -1,0 +1,427 @@
+﻿{
+  "meta": {
+    "setName": "20260804_굿모닝추억라디오_70년대감성",
+    "generatedAt": "2026-08-04T09:12:00+09:00",
+    "channelId": "good-morning-memory-radio",
+    "channelLabel": "굿모닝 추억라디오",
+    "conceptLabel": "70년대 감성",
+    "songCount": 18,
+    "lyricLanguage": "english"
+  },
+  "songs": [
+    {
+      "trackNo": 1,
+      "title": "Morning Kettle Waltz",
+      "titleLocalized": "아침 주전자 왈츠",
+      "listenerSituation": "watching the first light open across the kitchen table while the kettle sings on low heat",
+      "emotionArc": "sleepy heaviness opening into steady comfort",
+      "hookPhrase": "steam curls slow like a memory waking up",
+      "stylePrompt": "warm analog synth pads, soft brushed drums, gentle rhodes piano, nostalgic 1970s AM radio texture, slow tempo around 68 bpm, morning coffee mood, tape hiss and vinyl crackle, tender female vocal with light reverb, string swell in the last chorus, felt like a Sunday kitchen at dawn, gentle bassline walking under a warm horn pad, soft sunlight through curtains, unhurried breathing space between phrases, a kettle whistle motif answered by a single distant train horn, fade to silence",
+      "excludePrompt": "no distorted guitar, no aggressive drums, no modern trap hi-hats",
+      "lyrics": "The kettle sings a note I know\r\nSteam climbs slow where mornings go\r\nThe table waits, the light comes soft\r\nAnd all the years I have carried, lift, aloft",
+      "youtube": {
+        "title": "Morning Kettle Waltz - Cozy 70s Style Playlist Song",
+        "description": "A gentle morning waltz for slow coffee mornings, inspired by 1970s AM radio warmth.",
+        "tags": [
+          "70s music",
+          "morning playlist",
+          "cozy music",
+          "senior music",
+          "relaxing waltz"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 2,
+      "title": "Letters I Never Sent",
+      "titleLocalized": "부치지 못한 편지",
+      "listenerSituation": "sitting at the old table with a letter half written and the porch light left on",
+      "emotionArc": "private ache settling into gratitude",
+      "hookPhrase": "every unsent word finally finds its home",
+      "stylePrompt": "soft acoustic guitar, mellow strings, intimate close-mic vocal, slow 1970s ballad, warm tape saturation",
+      "excludePrompt": "no electronic drums, no autotune",
+      "lyrics": "The letter waits, the ink runs dry\r\nBut what I meant was never goodbye\r\nThe porch light stays, the night grows still\r\nAnd I am grateful, and I always will",
+      "youtube": {
+        "title": "Letters I Never Sent - Nostalgic Ballad",
+        "description": "A tender ballad about unsent letters and quiet gratitude.",
+        "tags": [
+          "70s ballad",
+          "nostalgic music",
+          "acoustic guitar",
+          "memory playlist",
+          "senior radio"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 3,
+      "title": "Shy Neon Evening",
+      "titleLocalized": "수줍은 네온의 저녁",
+      "listenerSituation": "walking past the neon sign downtown every evening after the whole day of work",
+      "emotionArc": "nervous shyness turning into certainty",
+      "hookPhrase": "the neon hums and so does my heart",
+      "stylePrompt": "funky electric piano, muted trumpet, mid tempo 70s soul groove, warm bassline",
+      "excludePrompt": "no screaming vocals, no heavy distortion",
+      "lyrics": "Neon light on a downtown street\r\nEvery evening, the same soft beat\r\nShy at first, but now I know\r\nThis is the way my heart will go",
+      "youtube": {
+        "title": "Shy Neon Evening - 70s Soul Groove",
+        "description": "A soulful evening stroll through neon-lit downtown streets.",
+        "tags": [
+          "70s soul",
+          "neon nostalgia",
+          "evening playlist",
+          "groove music",
+          "retro radio"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 4,
+      "title": "Boardwalk Waiting",
+      "titleLocalized": "해변 산책로의 기다림",
+      "listenerSituation": "standing on the boardwalk watching one train cross the salt air platform",
+      "emotionArc": "quiet nervousness melting into warm certainty",
+      "hookPhrase": "the tide waits the way I used to wait",
+      "stylePrompt": "gentle surf-tinged guitar, soft organ pads, brushed snare, coastal 1970s pop feel",
+      "excludePrompt": "no synthesizer leads, no fast tempo",
+      "lyrics": "Salt air rolling off the platform edge\r\nOne train waiting at the boardwalk ledge\r\nQuiet now, the nerves untie\r\nWarm and certain under the sky",
+      "youtube": {
+        "title": "Boardwalk Waiting - Coastal 70s Pop",
+        "description": "A coastal, boardwalk-bound song about waiting turning to certainty.",
+        "tags": [
+          "boardwalk music",
+          "70s pop",
+          "coastal playlist",
+          "relaxing radio",
+          "senior music"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 5,
+      "title": "Summer Dance Hall",
+      "titleLocalized": "여름밤 댄스홀",
+      "listenerSituation": "dancing in the summer heat with every old song from the record player",
+      "emotionArc": "restlessness blooming into free-wheeling joy",
+      "hookPhrase": "the record spins and so do we",
+      "stylePrompt": "upbeat disco strings, funky bass, four on the floor drums, 1970s dance hall energy",
+      "excludePrompt": "no modern EDM drops, no autotuned vocals",
+      "lyrics": "Record spinning, summer heat\r\nEvery old song, every beat\r\nRestless feet find their way\r\nFree and joyful, night to day",
+      "youtube": {
+        "title": "Summer Dance Hall - 70s Disco Throwback",
+        "description": "A joyful disco throwback for summer dance nights.",
+        "tags": [
+          "70s disco",
+          "dance hall",
+          "summer playlist",
+          "retro dance",
+          "feel good music"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 6,
+      "title": "Sticky Hot August Night",
+      "titleLocalized": "끈적한 팔월의 밤",
+      "listenerSituation": "driving down the open road with the window down and the whole night ahead",
+      "emotionArc": "sticky-hot restlessness exploding into carefree delight",
+      "hookPhrase": "the wind takes every worry off my shoulders",
+      "stylePrompt": "driving 70s rock organ, tambourine, road-trip energy, warm distorted guitar accents",
+      "excludePrompt": "no cold digital synths, no minor key gloom",
+      "lyrics": "Window down, the whole road wide\r\nSticky August, along for the ride\r\nCarefree now, the night unwinds\r\nEvery worry left behind",
+      "youtube": {
+        "title": "Sticky Hot August Night - Road Trip 70s Rock",
+        "description": "A carefree road-trip anthem for hot August nights.",
+        "tags": [
+          "70s rock",
+          "road trip music",
+          "summer night",
+          "retro driving",
+          "classic playlist"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 7,
+      "title": "Rooftop Radio",
+      "titleLocalized": "옥상의 라디오",
+      "listenerSituation": "sitting on the rooftop with the music playing across every open window",
+      "emotionArc": "nervous energy building into pure joy",
+      "hookPhrase": "every rooftop in the city sings along",
+      "stylePrompt": "AM radio funk, wah guitar, bright horns, 1970s rooftop summer party feel",
+      "excludePrompt": "no trap hi-hats, no aggressive bass drops",
+      "lyrics": "Every window open to the sound\r\nMusic drifting rooftop-bound\r\nNervous static turns to cheer\r\nPure joy is what I hear",
+      "youtube": {
+        "title": "Rooftop Radio - 70s Funk Party",
+        "description": "A rooftop funk party track full of pure joy and open windows.",
+        "tags": [
+          "70s funk",
+          "rooftop party",
+          "summer radio",
+          "retro funk",
+          "feel good playlist"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 8,
+      "title": "First Light Train",
+      "titleLocalized": "첫차의 새벽빛",
+      "listenerSituation": "standing at the train platform watching first light cross the tracks",
+      "emotionArc": "anticipation deepening into giddy readiness",
+      "hookPhrase": "the first train always feels like a beginning",
+      "stylePrompt": "gentle piano arpeggio, soft strings, rising 1970s morning anthem build",
+      "excludePrompt": "no heavy drums, no distortion",
+      "lyrics": "First light crosses the waiting track\r\nAnticipation, no looking back\r\nGiddy now, the train pulls in\r\nReady for the day to begin",
+      "youtube": {
+        "title": "First Light Train - Morning 70s Anthem",
+        "description": "A rising morning anthem about first light and new beginnings.",
+        "tags": [
+          "morning anthem",
+          "70s music",
+          "train song",
+          "new beginnings",
+          "senior playlist"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 9,
+      "title": "Doorway Goodbye",
+      "titleLocalized": "문간의 작별",
+      "listenerSituation": "standing in the doorway holding one hand and watching the road ahead",
+      "emotionArc": "sharp ache lifting into quiet hope",
+      "hookPhrase": "goodbyes are just hellos wearing a different coat",
+      "stylePrompt": "tender acoustic ballad, soft cello, sparse piano, 1970s farewell song feel",
+      "excludePrompt": "no electronic elements, no upbeat tempo",
+      "lyrics": "One hand holding at the door\r\nThe road ahead, the ache before\r\nSharp at first, but lifting light\r\nQuiet hope into the night",
+      "youtube": {
+        "title": "Doorway Goodbye - Tender 70s Farewell Ballad",
+        "description": "A tender farewell ballad about ache lifting into quiet hope.",
+        "tags": [
+          "70s ballad",
+          "farewell song",
+          "tender music",
+          "acoustic radio",
+          "memory playlist"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 10,
+      "title": "Booth by the Window",
+      "titleLocalized": "창가 부스 자리",
+      "listenerSituation": "sitting in the old diner booth by the window watching every car go by",
+      "emotionArc": "nervous risk softening into relieved hope",
+      "hookPhrase": "the window seat always sees more than it lets on",
+      "stylePrompt": "diner jukebox 1970s soft rock, warm electric piano, gentle drums",
+      "excludePrompt": "no aggressive guitar solos, no fast tempo",
+      "lyrics": "Booth by the window, coffee cup\r\nEvery car passing, looking up\r\nNervous risk begins to fade\r\nRelieved hope, softly made",
+      "youtube": {
+        "title": "Booth by the Window - Diner 70s Soft Rock",
+        "description": "A warm diner-booth song about nervous risk softening into hope.",
+        "tags": [
+          "diner music",
+          "70s soft rock",
+          "nostalgic radio",
+          "window seat",
+          "senior playlist"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 11,
+      "title": "Every Evening Drive",
+      "titleLocalized": "저녁마다의 드라이브",
+      "listenerSituation": "driving the same road every evening past the porch lights and the old signs",
+      "emotionArc": "ordinary tiredness warming into electric excitement",
+      "hookPhrase": "the same road never feels the same twice",
+      "stylePrompt": "evening cruise 1970s funk rock, clavinet, driving bassline",
+      "excludePrompt": "no cold digital synths, no minor gloom",
+      "lyrics": "Same old road, the porch lights glow\r\nOld signs passing, steady and slow\r\nTiredness warms to something bright\r\nElectric now, this ordinary night",
+      "youtube": {
+        "title": "Every Evening Drive - 70s Funk Rock Cruise",
+        "description": "An evening cruise song where ordinary tiredness turns electric.",
+        "tags": [
+          "70s funk rock",
+          "evening drive",
+          "cruise music",
+          "retro driving",
+          "classic radio"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 12,
+      "title": "Trellis and Salt Air",
+      "titleLocalized": "격자 울타리와 짠내 바람",
+      "listenerSituation": "walking past the trellis with the salt air across the boardwalk at evening",
+      "emotionArc": "quiet awe lighting up into calm belonging",
+      "hookPhrase": "the salt air remembers every summer we had",
+      "stylePrompt": "soft coastal jazz guitar, warm upright bass, gentle brushed cymbals",
+      "excludePrompt": "no heavy drums, no distortion",
+      "lyrics": "Trellis leaning by the salt-air breeze\r\nBoardwalk evening, quiet ease\r\nAwe is lighting, soft and slow\r\nCalm belonging, all I know",
+      "youtube": {
+        "title": "Trellis and Salt Air - Coastal 70s Jazz",
+        "description": "A quiet coastal jazz song about awe turning into calm belonging.",
+        "tags": [
+          "coastal jazz",
+          "70s music",
+          "boardwalk song",
+          "evening playlist",
+          "senior radio"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 13,
+      "title": "Homesick Diner",
+      "titleLocalized": "그리운 간이식당",
+      "listenerSituation": "sitting alone at the diner table across from an empty booth every morning",
+      "emotionArc": "homesick uncertainty easing toward curious wonder",
+      "hookPhrase": "an empty booth is just a story waiting to be told",
+      "stylePrompt": "quiet morning diner piano, soft brushes, warm upright bass",
+      "excludePrompt": "no electronic elements, no upbeat tempo",
+      "lyrics": "Empty booth across the way\r\nHomesick morning, every day\r\nUncertainty starts to ease\r\nWonder rises with the keys",
+      "youtube": {
+        "title": "Homesick Diner - Quiet 70s Morning Piano",
+        "description": "A quiet piano-led morning song about homesickness easing into wonder.",
+        "tags": [
+          "70s piano",
+          "diner song",
+          "morning playlist",
+          "nostalgic radio",
+          "senior music"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 14,
+      "title": "Open Road Freedom",
+      "titleLocalized": "열린 길의 자유",
+      "listenerSituation": "walking the open road with no plan and every window of the town lit warm",
+      "emotionArc": "aimless freedom opening toward calm wonder",
+      "hookPhrase": "no plan ever felt this much like a plan",
+      "stylePrompt": "wandering acoustic guitar, soft harmonica, loose 1970s folk feel",
+      "excludePrompt": "no electronic drums, no distortion",
+      "lyrics": "No plan, the open road ahead\r\nEvery window, warm and lit red\r\nFreedom opens wide and slow\r\nCalm wonder, wherever I go",
+      "youtube": {
+        "title": "Open Road Freedom - 70s Folk Wander",
+        "description": "A wandering folk song about aimless freedom opening into calm wonder.",
+        "tags": [
+          "70s folk",
+          "open road",
+          "wander music",
+          "retro folk",
+          "senior playlist"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 15,
+      "title": "Neighborhood Dance Hall",
+      "titleLocalized": "동네 댄스홀",
+      "listenerSituation": "dancing in the crowded dance hall with music and every old friend from the neighborhood",
+      "emotionArc": "chaotic noise settling toward full-hearted belonging",
+      "hookPhrase": "every old friend still remembers the steps",
+      "stylePrompt": "lively 1970s big band swing, bright brass, upbeat piano",
+      "excludePrompt": "no electronic elements, no modern production",
+      "lyrics": "Crowded hall, the music loud\r\nOld friends found within the crowd\r\nChaos settles, warm and slow\r\nBelonging is the only glow",
+      "youtube": {
+        "title": "Neighborhood Dance Hall - 70s Big Band Swing",
+        "description": "A lively big-band swing song about noise settling into belonging.",
+        "tags": [
+          "70s swing",
+          "dance hall music",
+          "big band",
+          "neighborhood playlist",
+          "retro dance"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 16,
+      "title": "Porch Swing Evenings",
+      "titleLocalized": "포치 그네의 저녁",
+      "listenerSituation": "sitting on the porch swing every evening watching the kettle steam rise with coffee",
+      "emotionArc": "ordinary routine melting toward easy laughter",
+      "hookPhrase": "the porch swing keeps its own gentle rhythm",
+      "stylePrompt": "soft porch-front acoustic, gentle whistle melody, relaxed 1970s tempo",
+      "excludePrompt": "no electronic drums, no fast tempo",
+      "lyrics": "Porch swing rocking, evening steam\r\nCoffee rising like a dream\r\nRoutine melts to something light\r\nEasy laughter fills the night",
+      "youtube": {
+        "title": "Porch Swing Evenings - Cozy 70s Acoustic",
+        "description": "A cozy porch-swing acoustic song about routine melting into laughter.",
+        "tags": [
+          "70s acoustic",
+          "porch music",
+          "evening playlist",
+          "cozy radio",
+          "senior music"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 17,
+      "title": "Frost on the Porch Table",
+      "titleLocalized": "가을의 첫 아침",
+      "listenerSituation": "opening the old door to find first frost across the porch table at morning",
+      "emotionArc": "mild surprise turning toward grateful stillness",
+      "hookPhrase": "the first frost always arrives without knocking",
+      "stylePrompt": "soft autumn strings, gentle piano, quiet 1970s morning hymn feel",
+      "excludePrompt": "no electronic elements, no upbeat tempo",
+      "lyrics": "Frost across the table's edge\r\nSurprise upon the morning ledge\r\nTurning now to grateful still\r\nAutumn morning, quiet, still",
+      "youtube": {
+        "title": "Frost on the Porch Table - Autumn 70s Morning",
+        "description": "A quiet autumn morning song about surprise turning into grateful stillness.",
+        "tags": [
+          "autumn playlist",
+          "70s morning",
+          "frost song",
+          "grateful music",
+          "senior radio"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    },
+    {
+      "trackNo": 18,
+      "title": "The Afternoon Spring Seeped In",
+      "titleLocalized": "봄이 스미던 오후",
+      "listenerSituation": "watching the whole winter lift as one warm afternoon opens across the window",
+      "emotionArc": "long winter heaviness lifting toward open relief",
+      "hookPhrase": "spring always seeps in before you notice the door was open",
+      "stylePrompt": "warm spring strings, soft flute, gentle 1970s afternoon waltz",
+      "excludePrompt": "no electronic drums, no cold synths",
+      "lyrics": "Winter lifts across the pane\r\nOne warm afternoon again\r\nHeaviness gives way to light\r\nOpen relief, spring in sight",
+      "youtube": {
+        "title": "The Afternoon Spring Seeped In - 70s Spring Waltz",
+        "description": "A gentle spring waltz about long winter heaviness lifting into open relief.",
+        "tags": [
+          "spring playlist",
+          "70s waltz",
+          "seasonal music",
+          "relief song",
+          "senior radio"
+        ]
+      },
+      "seasonMoment": "Late Summer Opening"
+    }
+  ]
+}
