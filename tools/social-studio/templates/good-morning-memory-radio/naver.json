@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "naver",
+  "_comment": "role:title and role:body-intro. generate/blogPost.js appends the fixed <!-- IMAGE:cover --> and <!-- 여기에 직접 한 줄 --> markers programmatically (spec 3.6) so every post has them regardless of which template rotation picks.",
+  "templates": [
+    { "id": "nv-t-001", "role": "title", "text": "{seasonKo} {timeKo}에 듣는 {conceptLabel} 플레이리스트 {trackCount}곡" },
+    { "id": "nv-t-002", "role": "title", "text": "{sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 {conceptLabel} 노래 {trackCount}곡" },
+    { "id": "nv-t-003", "role": "title", "text": "{emotionFromKo}에서 {emotionToKo}까지, {conceptLabel} {trackCount}곡 소개" },
+    { "id": "nv-t-004", "role": "title", "text": "{channelLabel}(이/가) 고른 {timeKo} 노래 {trackCount}곡" },
+    { "id": "nv-t-005", "role": "title", "text": "{seasonKo}에 어울리는 {conceptLabel} 플레이리스트" },
+    { "id": "nv-t-006", "role": "title", "text": "{sceneNoun3}(이/가) 생각나는 {timeKo}, {conceptLabel} {trackCount}곡" },
+    { "id": "nv-t-007", "role": "title", "text": "{timeKo}에 틀어두기 좋은 {conceptLabel} 노래 {trackCount}곡" },
+    { "id": "nv-t-008", "role": "title", "text": "{emotionToKo}(이/가) 필요한 날, {conceptLabel} {trackCount}곡" },
+    { "id": "nv-t-009", "role": "title", "text": "{channelLabel} : {seasonKo} {timeKo} 플레이리스트" },
+    { "id": "nv-t-010", "role": "title", "text": "{sceneNoun1}, {sceneNoun2}(과/와) 함께 듣는 {trackCount}곡" },
+    { "id": "nv-b-001", "role": "body-intro", "text": "<p>{channelLabel}입니다. {seasonKo} {timeKo}에 어울리는 {conceptLabel} {trackCount}곡을 소개합니다.</p>" },
+    { "id": "nv-b-002", "role": "body-intro", "text": "<p>오늘은 {sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 노래들을 모아봤습니다. {conceptLabel} {trackCount}곡입니다.</p>" },
+    { "id": "nv-b-003", "role": "body-intro", "text": "<p>{emotionFromKo}에서 {emotionToKo}(으로/로) 이어지는 {trackCount}곡을 준비했습니다.</p>" },
+    { "id": "nv-b-004", "role": "body-intro", "text": "<p>{seasonKo}, {timeKo}에 듣기 좋은 {conceptLabel} 노래들을 골라봤어요.</p>" },
+    { "id": "nv-b-005", "role": "body-intro", "text": "<p>{channelLabel}(이/가) 오늘 준비한 {conceptLabel} {trackCount}곡입니다. {sceneNoun3}(이/가) 떠오르는 곡들로 채웠습니다.</p>" },
+    { "id": "nv-b-006", "role": "body-intro", "text": "<p>{timeKo}에 잘 어울리는 {conceptLabel} 노래 {trackCount}곡을 소개해 드립니다.</p>" },
+    { "id": "nv-b-007", "role": "body-intro", "text": "<p>{emotionToKo}(이/가) 필요한 {timeKo}, {conceptLabel} {trackCount}곡을 들어보세요.</p>" },
+    { "id": "nv-b-008", "role": "body-intro", "text": "<p>{sceneNoun1}, {sceneNoun2}, {sceneNoun3}(이/가) 떠오르는 {conceptLabel} 노래 {trackCount}곡입니다.</p>" },
+    { "id": "nv-b-009", "role": "body-intro", "text": "<p>{seasonKo}에 어울리는 {conceptLabel} 플레이리스트, {trackCount}곡을 준비했습니다.</p>" },
+    { "id": "nv-b-010", "role": "body-intro", "text": "<p>{channelLabel}(과/와) 함께하는 {timeKo}입니다. {conceptLabel} {trackCount}곡을 들어보세요.</p>" }
+  ]
+}

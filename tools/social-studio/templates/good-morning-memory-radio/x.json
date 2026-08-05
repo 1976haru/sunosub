@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "x",
+  "_comment": "role:main is the URL-bearing post (URL counted as platformLimits.x.urlLength=23 chars regardless of real length); role:thread are short follow-ups with no URL slot.",
+  "templates": [
+    { "id": "x-m-001", "role": "main", "text": "{seasonKo} {timeKo}, {conceptLabel} {trackCount}곡 올렸습니다. {youtubeUrl}" },
+    { "id": "x-m-002", "role": "main", "text": "{emotionToKo}(이/가) 필요한 {timeKo}에 듣기 좋은 {trackCount}곡. {youtubeUrl}" },
+    { "id": "x-m-003", "role": "main", "text": "{sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 {conceptLabel} 노래 {trackCount}곡입니다. {youtubeUrl}" },
+    { "id": "x-m-004", "role": "main", "text": "{channelLabel} 새 플레이리스트: {conceptLabel} {trackCount}곡. {youtubeUrl}" },
+    { "id": "x-m-005", "role": "main", "text": "{emotionFromKo}에서 {emotionToKo}(으로/로). {conceptLabel} {trackCount}곡 지금 들어보세요. {youtubeUrl}" },
+    { "id": "x-m-006", "role": "main", "text": "{seasonKo}에 어울리는 {trackCount}곡을 모았습니다. {youtubeUrl}" },
+    { "id": "x-m-007", "role": "main", "text": "{sceneNoun3}(이/가) 생각나는 {timeKo}, {conceptLabel} {trackCount}곡. {youtubeUrl}" },
+    { "id": "x-m-008", "role": "main", "text": "오늘의 {conceptLabel} 플레이리스트, {trackCount}곡 공개했습니다. {youtubeUrl}" },
+    { "id": "x-m-009", "role": "main", "text": "{timeKo}에 틀어두면 좋은 {conceptLabel} 노래 {trackCount}곡. {youtubeUrl}" },
+    { "id": "x-m-010", "role": "main", "text": "{channelLabel}: {seasonKo} {timeKo} {trackCount}곡 업로드. {youtubeUrl}" },
+    { "id": "x-t-001", "role": "thread", "text": "이번 {trackCount}곡은 {emotionFromKo}에서 {emotionToKo}(으로/로) 흘러가도록 순서를 골랐습니다." },
+    { "id": "x-t-002", "role": "thread", "text": "{sceneNoun1}(과/와) {sceneNoun2}, 그 시절 풍경이 떠오르는 곡들로 채웠어요." },
+    { "id": "x-t-003", "role": "thread", "text": "{seasonKo} {timeKo}에 특히 잘 어울리는 곡들입니다." },
+    { "id": "x-t-004", "role": "thread", "text": "댓글로 오늘 가장 마음에 남은 곡을 알려주세요." },
+    { "id": "x-t-005", "role": "thread", "text": "{channelLabel}(은/는) 매주 새로운 {conceptLabel} 플레이리스트로 찾아옵니다." },
+    { "id": "x-t-006", "role": "thread", "text": "{sceneNoun3}(이/가) 떠오르는 분이라면 오늘 이 곡들이 반가우실 거예요." }
+  ]
+}

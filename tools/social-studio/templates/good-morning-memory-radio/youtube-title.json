@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "youtube-title",
+  "templates": [
+    { "id": "yt-t-001", "text": "{seasonKo} {timeKo}에 듣는 {conceptLabel} {trackCount}곡" },
+    { "id": "yt-t-002", "text": "{sceneNoun1}(과/와) {sceneNoun2}, {emotionToKo}(으로/로) 가는 {trackCount}곡" },
+    { "id": "yt-t-003", "text": "{channelLabel} | {conceptLabel} {timeKo} 플레이리스트 {trackCount}곡" },
+    { "id": "yt-t-004", "text": "{emotionFromKo}에서 {emotionToKo}까지, {conceptLabel} {trackCount}곡" },
+    { "id": "yt-t-005", "text": "{timeKo}에 켜두는 {conceptLabel} 노래 {trackCount}곡" },
+    { "id": "yt-t-006", "text": "{sceneNoun1} 곁에서 듣는 {seasonKo} {timeKo} {trackCount}곡" },
+    { "id": "yt-t-007", "text": "{conceptLabel}, {sceneNoun2}(과/와) 함께하는 {timeKo} {trackCount}곡" },
+    { "id": "yt-t-008", "text": "{seasonKo}에 어울리는 {emotionToKo} 노래 {trackCount}곡" },
+    { "id": "yt-t-009", "text": "{sceneNoun3}(이/가) 떠오르는 {conceptLabel} {timeKo} 플레이리스트" },
+    { "id": "yt-t-010", "text": "{channelLabel} {timeKo} 라디오 — {conceptLabel} {trackCount}곡" },
+    { "id": "yt-t-011", "text": "{emotionToKo}(이/가) 필요한 {timeKo}, {conceptLabel} {trackCount}곡" },
+    { "id": "yt-t-012", "text": "{sceneNoun1}, {sceneNoun2}, {sceneNoun3}(으로/로) 채운 {timeKo} {trackCount}곡" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "_comment": "Channel-wide hashtag/tag pool. Hashtags and tags are an explicit exception to the untranslated-English-leak check (spec section 6.4), so English entries are fine here without a lexicon entry.",
+  "hashtags": [
+    "#추억라디오", "#굿모닝추억라디오", "#감성라디오", "#7080", "#7080세대", "#옛날노래",
+    "#그시절감성", "#추억소환", "#힐링음악", "#잔잔한음악", "#카페음악", "#커피타임",
+    "#향수", "#세대공감", "#어른들의음악", "#부모님선물", "#효도플레이리스트", "#노래모음",
+    "#감성플레이리스트", "#아침음악", "#출근길음악", "#잔잔한아침", "#마음이편안해지는음악",
+    "#옛날감성", "#라디오스타일", "#7080추억", "#온기가득한음악", "#마음의쉼표", "#잔잔한하루",
+    "#플레이리스트", "#새벽감성", "#레트로", "#추억팝송", "#감성충전", "#힐링플레이리스트",
+    "#goodmorningplaylist", "#nostalgicmusic", "#retrovibes", "#morningmusic", "#healingmusic",
+    "#koreanoldies", "#cafeplaylist", "#relaxingmusic", "#calmmusic", "#throwbacksongs"
+  ],
+  "tags": [
+    "추억라디오", "굿모닝추억라디오", "감성라디오", "7080", "7080세대", "옛날노래",
+    "그시절감성", "추억소환", "힐링음악", "잔잔한음악", "카페음악", "커피타임",
+    "향수", "세대공감", "어른들의음악", "부모님선물", "효도플레이리스트", "노래모음",
+    "감성플레이리스트", "아침음악", "출근길음악", "잔잔한아침", "옛날감성",
+    "라디오스타일", "온기가득한음악", "플레이리스트", "새벽감성", "레트로",
+    "감성충전", "힐링플레이리스트"
+  ]
+}

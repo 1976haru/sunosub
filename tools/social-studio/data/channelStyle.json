@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "_comment": "Non-language per-channel formatting rules used by generate/socialPost.js (e.g. facebook short-sentence/generous-linebreak mode for a senior audience). Separate from data/channels.json (S0's channelId->language map) so S1 doesn't have to touch a file S0 owns.",
+  "channels": {
+    "good-morning-memory-radio": {
+      "facebookShortSentences": true,
+      "facebookParagraphBreak": "\n\n"
+    }
+  },
+  "default": {
+    "facebookShortSentences": false,
+    "facebookParagraphBreak": "\n"
+  }
+}

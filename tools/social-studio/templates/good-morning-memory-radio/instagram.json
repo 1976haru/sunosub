@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "instagram",
+  "templates": [
+    { "id": "ig-001", "text": "{seasonKo} {timeKo}입니다 🎶\n{sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 {conceptLabel} {trackCount}곡을 준비했어요.\n오늘도 편안한 하루 보내세요. 유튜브 링크는 프로필에 있습니다." },
+    { "id": "ig-002", "text": "{emotionFromKo}(이/가) {emotionToKo}(으로/로) 바뀌어가는 시간.\n{conceptLabel} {trackCount}곡, 지금 유튜브에서 만나보세요." },
+    { "id": "ig-003", "text": "{channelLabel} 오늘의 플레이리스트 🎵\n{sceneNoun3}(이/가) 생각나는 {timeKo}에 어울리는 노래들을 골랐습니다." },
+    { "id": "ig-004", "text": "{seasonKo}에 어울리는 {emotionToKo} 노래 {trackCount}곡.\n프로필 링크에서 전곡을 들어보세요." },
+    { "id": "ig-005", "text": "{timeKo}, {sceneNoun1}(과/와) 함께 듣기 좋은 {conceptLabel} 노래들입니다.\n오늘 하루도 평안하시길 바랍니다." },
+    { "id": "ig-006", "text": "{channelLabel}입니다.\n{sceneNoun2}(이/가) 떠오르는 {trackCount}곡을 오늘 새로 올렸어요." },
+    { "id": "ig-007", "text": "{emotionToKo}(이/가) 필요한 {timeKo}, {conceptLabel} {trackCount}곡을 준비했습니다.\n댓글로 오늘의 기분을 들려주세요." },
+    { "id": "ig-008", "text": "{seasonKo} {timeKo}에 듣는 {conceptLabel}.\n{sceneNoun1}, {sceneNoun3}(이/가) 함께하는 {trackCount}곡입니다." },
+    { "id": "ig-009", "text": "오늘의 {conceptLabel} 플레이리스트 🎧\n{emotionFromKo}에서 {emotionToKo}까지, {trackCount}곡으로 채웠습니다." },
+    { "id": "ig-010", "text": "{channelLabel}(과/와) 함께하는 {timeKo}.\n{sceneNoun2}(이/가) 생각나는 노래 {trackCount}곡, 프로필 링크에서 들어보세요." },
+    { "id": "ig-011", "text": "{sceneNoun1}(과/와) {sceneNoun2}, 그리고 {emotionToKo}.\n{conceptLabel} {trackCount}곡에 오늘의 이야기를 담았습니다." }
+  ]
+}

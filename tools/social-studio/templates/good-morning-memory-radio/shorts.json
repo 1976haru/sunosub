@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "shorts",
+  "_comment": "Per-song templates (role:title / role:description). generate/youtubeShort.js prefers the song's own normalized.json youtube.title/description (already written) and only falls back to these when that block is missing.",
+  "templates": [
+    { "id": "sh-t-001", "role": "title", "text": "{titleKo} | {conceptLabel}" },
+    { "id": "sh-t-002", "role": "title", "text": "{titleKo} — {emotionToKo}" },
+    { "id": "sh-t-003", "role": "title", "text": "{emotionFromKo}에서 {emotionToKo}(으로/로), {titleKo}" },
+    { "id": "sh-t-004", "role": "title", "text": "{titleKo} ({titleEn})" },
+    { "id": "sh-t-005", "role": "title", "text": "{seasonKo}의 노래, {titleKo}" },
+    { "id": "sh-t-006", "role": "title", "text": "{timeKo}에 듣는 {titleKo}" },
+    { "id": "sh-t-007", "role": "title", "text": "{titleKo} · {conceptLabel} 쇼츠" },
+    { "id": "sh-t-008", "role": "title", "text": "{emotionToKo}(이/가) 필요할 때, {titleKo}" },
+    { "id": "sh-t-009", "role": "title", "text": "{titleKo} | {channelLabel}" },
+    { "id": "sh-t-010", "role": "title", "text": "{sceneNoun1}(이/가) 떠오르는 노래, {titleKo}" },
+    { "id": "sh-t-011", "role": "title", "text": "{titleKo} · {seasonKo} {timeKo}" },
+    { "id": "sh-d-001", "role": "description", "text": "{titleKo} — {emotionFromKo}에서 {emotionToKo}(으로/로) 흘러가는 노래입니다." },
+    { "id": "sh-d-002", "role": "description", "text": "{conceptLabel} 중 한 곡, {titleKo}입니다." },
+    { "id": "sh-d-003", "role": "description", "text": "{timeKo}에 듣기 좋은 곡, {titleKo}." },
+    { "id": "sh-d-004", "role": "description", "text": "{seasonKo}에 어울리는 노래, {titleKo}입니다." },
+    { "id": "sh-d-005", "role": "description", "text": "{channelLabel}(이/가) 고른 오늘의 곡, {titleKo}." },
+    { "id": "sh-d-006", "role": "description", "text": "{emotionToKo}(이/가) 필요한 분들께 추천하는 {titleKo}." },
+    { "id": "sh-d-007", "role": "description", "text": "전체 곡은 {channelLabel} 채널에서 들어보세요. — {titleKo}" },
+    { "id": "sh-d-008", "role": "description", "text": "{titleKo}, {conceptLabel} 플레이리스트에 담긴 한 곡입니다." },
+    { "id": "sh-d-009", "role": "description", "text": "{sceneNoun2}(이/가) 떠오르는 곡, {titleKo}입니다." },
+    { "id": "sh-d-010", "role": "description", "text": "{titleKo} — {timeKo} {seasonKo}에 어울리는 노래." }
+  ]
+}

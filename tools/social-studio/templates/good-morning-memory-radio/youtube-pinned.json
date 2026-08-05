@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "youtube-pinned",
+  "templates": [
+    { "id": "yt-p-001", "text": "오늘 {trackCount}곡 중 가장 마음에 남는 곡은 몇 번이었나요? 댓글로 알려주세요. — {channelLabel}" },
+    { "id": "yt-p-002", "text": "{channelLabel}입니다. 이 영상이 편안한 하루의 시작이 되었기를 바랍니다." },
+    { "id": "yt-p-003", "text": "구독과 알림 설정을 해두시면 다음 {conceptLabel} 플레이리스트를 가장 먼저 만나보실 수 있어요." },
+    { "id": "yt-p-004", "text": "이 노래들과 함께한 추억이 있으시다면 댓글로 나눠주세요. 모두 읽고 있습니다." },
+    { "id": "yt-p-005", "text": "{channelLabel}(은/는) 광고 없이, 노래에만 집중할 수 있도록 만들어집니다. 함께해 주셔서 감사합니다." },
+    { "id": "yt-p-006", "text": "볼륨을 낮추고 편하게 들으세요. 오늘도 좋은 하루 되시길 바랍니다 — {channelLabel}" },
+    { "id": "yt-p-007", "text": "다음에 듣고 싶은 노래나 시절이 있다면 댓글로 남겨주세요. {conceptLabel} 다음 편에 참고하겠습니다." },
+    { "id": "yt-p-008", "text": "{trackCount}곡 전체를 이어서 들으시려면 재생목록에 저장해두세요." },
+    { "id": "yt-p-009", "text": "가족, 친구분들과 함께 들으셔도 좋습니다. 공유해 주시면 큰 힘이 됩니다 — {channelLabel}" },
+    { "id": "yt-p-010", "text": "매주 새 영상으로 찾아뵙겠습니다. 오늘도 편안한 시간 보내세요." },
+    { "id": "yt-p-011", "text": "이 채널이 처음이시라면, {channelLabel} 구독 한 번 부탁드립니다. 감사합니다." }
+  ]
+}

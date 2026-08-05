@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "youtube": { "titleMax": 100, "descMax": 5000, "tagsTotalMax": 500, "hashtagCount": 15, "tagCount": 20 },
+  "instagram": { "captionMax": 2200, "hashtagMax": 30 },
+  "x": { "postMax": 280, "urlLength": 23 },
+  "facebook": { "postMax": 63206 },
+  "naver": { "tagMax": 10 },
+  "tiktok": { "captionMax": 2200, "hashtagMax": 5 }
+}
