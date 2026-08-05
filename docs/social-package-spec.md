@@ -53,8 +53,16 @@ tools/social-studio/
 ## 2. 실행 방법
 
 ```bash
-node --test tools/social-studio/test/*.test.js
+node --test --test-concurrency=1 tools/social-studio/test/*.test.js
 ```
+
+**`--test-concurrency=1`이 필수입니다.** 완료조건 검증용 테스트 일부는 spec이 명시한 대로
+실제 공유 픽스처 파일(`data/lexicon/ko/nouns.json`, `templates/good-morning-memory-radio/`)을
+백업 → 비움 → 실행 → 복원하는 방식으로 동작한다(S0 완료조건 5번, S1 완료조건 3번 — 둘 다
+"실제 파일을 비우고 실행하면"이라고 명시했으므로 격리된 사본이 아니라 진짜 파일을 다룬다).
+기본 동시성(`node --test`가 여러 테스트 파일을 병렬로 돌리는 것)에서는 이 백업/복원 구간과
+같은 파일을 읽는 다른 테스트 파일이 겹칠 수 있어 드물게 실패한다 — 실제로 3회 연속 실행 중
+2회 실패로 재현된 문제다. `--test-concurrency=1`로 직렬 실행하면 100% 통과한다.
 
 파이프라인을 직접 실행하려면:
 

@@ -221,6 +221,8 @@ export function generateTextPack(normalized, options = {}) {
   const textpack = {
     setName: normalized.set.setName,
     channelId,
+    channelLabel: normalized.set.channelLabel,
+    conceptLabel: normalized.set.conceptLabel ?? null,
     youtube: {
       titles: yt.titles,
       description: yt.description,

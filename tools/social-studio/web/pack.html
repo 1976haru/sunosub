@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>텍스트 팩 — Creator Studio</title>
+<!--
+  TASK-S2 — single offline HTML file. No CDN, no web font, no framework
+  (spec section 6). Everything below this comment is CSS + vanilla JS.
+-->
+<style>
+  :root {
+    --border: #dcdcdc;
+    --bg: #f4f4f4;
+    --card: #ffffff;
+    --text: #202020;
+    --muted: #767676;
+    --accent: #2f6f4f;
+    --ok: #2e7d32;
+    --warn: #e07b00;
+    --over: #c62828;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  header.pack-header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+  }
+  header h1 { font-size: 17px; margin: 0 0 10px; font-weight: 600; }
+  .url-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .url-row label { display: flex; align-items: center; gap: 8px; flex: 1; color: var(--muted); }
+  .url-row input {
+    flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px;
+  }
+  .url-row input.invalid { border-color: var(--over); background: #fff3f3; }
+  .url-row button, .row button, .apply-btn {
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 4px; background: #fafafa;
+    cursor: pointer; font-size: 13px;
+  }
+  .url-row button:hover, .row button:hover { background: #eee; }
+  .progress-row { display: flex; align-items: center; gap: 10px; }
+  .progress-bar { flex: 1; height: 8px; background: #e6e6e6; border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width .2s; }
+  #progressLabel { color: var(--muted); min-width: 60px; text-align: right; }
+  .banner {
+    margin-top: 10px; padding: 8px 12px; background: #fff4e0; border: 1px solid #f0c674;
+    border-radius: 4px; font-size: 13px;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 20px 24px 80px; }
+  section.pack-section {
+    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 18px; overflow: hidden;
+  }
+  section.pack-section h2 {
+    font-size: 14px; margin: 0; padding: 10px 16px; background: #f0f0f0; border-bottom: 1px solid var(--border);
+  }
+  .row {
+    display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid #eee;
+  }
+  .row:last-child { border-bottom: none; }
+  .row-label { width: 130px; flex-shrink: 0; color: var(--muted); padding-top: 6px; }
+  .row-body { flex: 1; min-width: 0; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+  .tabs button {
+    padding: 3px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 12px;
+    background: #fafafa; cursor: pointer;
+  }
+  .tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .value-view {
+    white-space: pre-wrap; word-break: break-word; padding: 6px 8px; border: 1px solid transparent;
+    border-radius: 4px; cursor: text; min-height: 1.4em;
+  }
+  .value-view:hover { border-color: var(--border); background: #fbfbfb; }
+  .value-view.html-preview { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #444; }
+  textarea.value-edit {
+    width: 100%; min-height: 4em; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 4px;
+    font: inherit; resize: vertical;
+  }
+  .row-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .count-badge { font-size: 12px; padding: 2px 6px; border-radius: 10px; background: #eee; color: var(--muted); }
+  .count-badge.sev-ok { background: #e6f4ea; color: var(--ok); }
+  .count-badge.sev-warn { background: #fff1de; color: var(--warn); }
+  .count-badge.sev-over { background: #fbe4e4; color: var(--over); }
+  .edited-badge { font-size: 12px; color: var(--accent); }
+  .row-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+  .row-actions .btn-line { display: flex; gap: 6px; }
+  .copy-btn { min-width: 64px; }
+  .copy-btn.copied { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .check-btn { width: 34px; text-align: center; }
+  .check-btn.checked { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .revert-btn { font-size: 12px; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0; }
+  .empty-state { padding: 40px; text-align: center; color: var(--muted); }
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #222; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  #toast.show { opacity: 0.92; }
+  #clipboardFallback { position: absolute; left: -9999px; top: -9999px; }
+</style>
+</head>
+<body>
+<header class="pack-header">
+  <h1 id="titleLine">불러오는 중…</h1>
+  <div class="url-row">
+    <label>유튜브 URL
+      <input id="youtubeUrlInput" type="text" placeholder="https://youtu.be/...">
+    </label>
+    <button id="applyUrlBtn" class="apply-btn">적용</button>
+  </div>
+  <div class="progress-row">
+    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    <span id="progressLabel">0 / 0</span>
+  </div>
+  <div id="bannerArea"></div>
+</header>
+<main id="sections"><div class="empty-state">불러오는 중…</div></main>
+<div id="toast" aria-live="polite"></div>
+<textarea id="clipboardFallback" readonly></textarea>
+
+<script>
+'use strict';
+(function () {
+  var SECTION_LABELS = {
+    youtube: '유튜브',
+    naver: '네이버 블로그',
+    facebook: '페이스북',
+    x: 'X',
+    instagram: '인스타그램',
+    shorts: '쇼츠 / 틱톡',
+    hatena: '하테나'
+  };
+  var CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+  var MAX_RENDER_ITEMS = 500; // explicit loop bound — well above any real textpack's item count
+
+  var pathParts = location.pathname.split('/').filter(Boolean);
+  var SET_NAME = decodeURIComponent(pathParts[pathParts.length - 1] || '');
+  var API_BASE = '/social-studio/api/pack/' + encodeURIComponent(SET_NAME);
+
+  var activeTab = {}; // group -> item id currently shown
+  var display = null; // last payload from the server
+  var itemsById = {};
+
+  function $(id) { return document.getElementById(id); }
+
+  function toast(message) {
+    var el = $('toast');
+    el.textContent = message;
+    el.classList.add('show');
+    setTimeout(function () { el.classList.remove('show'); }, 1200);
+  }
+
+  // --- clipboard: navigator.clipboard first, hidden-textarea execCommand fallback (spec 3-1) ---
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(function () { return fallbackCopy(text); });
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+  function fallbackCopy(text) {
+    var ta = $('clipboardFallback');
+    ta.value = text;
+    ta.style.display = 'block';
+    ta.focus();
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.style.display = 'none';
+    if (!ok) toast('복사에 실패했습니다. 직접 선택해 복사해 주세요.');
+    return ok;
+  }
+
+  // --- API calls ---
+  function api(path, options) {
+    return fetch(API_BASE + path, options).then(function (res) {
+      if (!res.ok) return res.json().then(function (body) { throw new Error(body.error || ('요청 실패: ' + res.status)); });
+      return res.json();
+    });
+  }
+  function fetchDisplay() { return fetch(API_BASE).then(function (r) { return r.json(); }); }
+  function saveStatePatch(patch) { return api('/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }); }
+  function saveEdit(itemId, value) { return api('/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: itemId, value: value }) }); }
+  function revertItem(itemId) { return api('/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: itemId, revert: true }) }); }
+  function revealFolder(subPath) { return api('/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subPath: subPath || '' }) }); }
+
+  // --- rendering ---
+  function render(data) {
+    display = data;
+    itemsById = {};
+    data.items.forEach(function (i) { itemsById[i.id] = i; });
+    renderHeader(data);
+    renderSections(data);
+  }
+
+  function renderHeader(data) {
+    var titleParts = [data.channelLabel, data.conceptLabel, data.setName].filter(Boolean);
+    $('titleLine').textContent = titleParts.join(' · ');
+    if (document.activeElement !== $('youtubeUrlInput')) {
+      $('youtubeUrlInput').value = data.youtubeUrl || '';
+      $('youtubeUrlInput').classList.remove('invalid');
+    }
+    $('progressLabel').textContent = data.checkedCount + ' / ' + data.total;
+    var pct = data.total ? Math.round((data.checkedCount / data.total) * 100) : 0;
+    $('progressFill').style.width = pct + '%';
+    var banner = $('bannerArea');
+    banner.innerHTML = '';
+    if (data.originalChanged) {
+      var div = document.createElement('div');
+      div.className = 'banner';
+      div.textContent = '원본이 갱신되었습니다(S1이 다시 실행됨). 편집한 항목은 그대로 유지됩니다 — 필요하면 항목별로 [원본으로] 버튼을 눌러 되돌리세요.';
+      banner.appendChild(div);
+    }
+  }
+
+  function renderSections(data) {
+    var container = $('sections');
+    container.innerHTML = '';
+    if (!data.sections.length) {
+      container.innerHTML = '<div class="empty-state">표시할 섹션이 없습니다.</div>';
+      return;
+    }
+    data.sections.forEach(function (sectionKey, idx) {
+      var items = data.items.filter(function (i) { return i.section === sectionKey; });
+      if (!items.length) return; // 채널이 쓰지 않는 플랫폼은 렌더링하지 않는다 (spec 완료조건 #11)
+      var section = document.createElement('section');
+      section.className = 'pack-section';
+      var h2 = document.createElement('h2');
+      h2.textContent = (CIRCLED[idx] || (idx + 1) + '.') + ' ' + (SECTION_LABELS[sectionKey] || sectionKey);
+      section.appendChild(h2);
+
+      var rendered = {};
+      var count = 0;
+      for (var i = 0; i < items.length && count < MAX_RENDER_ITEMS; i += 1) {
+        var item = items[i];
+        if (rendered[item.id]) continue;
+        if (item.group) {
+          var groupItems = items.filter(function (gi) { return gi.group === item.group; });
+          groupItems.forEach(function (gi) { rendered[gi.id] = true; });
+          section.appendChild(renderTabRow(item.group, groupItems));
+        } else {
+          rendered[item.id] = true;
+          section.appendChild(renderRow(item));
+        }
+        count += 1;
+      }
+      container.appendChild(section);
+    });
+  }
+
+  function renderTabRow(group, groupItems) {
+    if (!(group in activeTab) || !groupItems.some(function (i) { return i.id === activeTab[group]; })) {
+      activeTab[group] = groupItems[0].id;
+    }
+    var wrap = document.createElement('div');
+    wrap.className = 'row';
+    var label = document.createElement('div');
+    label.className = 'row-label';
+    label.textContent = '제목';
+    wrap.appendChild(label);
+
+    var body = document.createElement('div');
+    body.className = 'row-body';
+    var tabs = document.createElement('div');
+    tabs.className = 'tabs';
+    groupItems.forEach(function (gi, idx) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '후보 ' + (idx + 1);
+      if (gi.id === activeTab[group]) btn.classList.add('active');
+      btn.addEventListener('click', function () { activeTab[group] = gi.id; renderSections(display); });
+      tabs.appendChild(btn);
+    });
+    body.appendChild(tabs);
+
+    var activeItem = itemsById[activeTab[group]];
+    body.appendChild(buildValueBlock(activeItem));
+    wrap.appendChild(body);
+    wrap.appendChild(buildActions(activeItem));
+    return wrap;
+  }
+
+  function renderRow(item) {
+    var wrap = document.createElement('div');
+    wrap.className = 'row';
+    var label = document.createElement('div');
+    label.className = 'row-label';
+    label.textContent = item.label;
+    wrap.appendChild(label);
+
+    var body = document.createElement('div');
+    body.className = 'row-body';
+    body.appendChild(buildValueBlock(item));
+    wrap.appendChild(body);
+    wrap.appendChild(buildActions(item));
+    return wrap;
+  }
+
+  function buildValueBlock(item) {
+    var box = document.createElement('div');
+    var view = document.createElement('div');
+    view.className = 'value-view' + (item.id === 'naver.bodyHtml' ? ' html-preview' : '');
+    view.textContent = item.value;
+    view.title = '클릭해서 수정';
+    view.addEventListener('click', function () { startEdit(box, item); });
+    box.appendChild(view);
+
+    var meta = document.createElement('div');
+    meta.className = 'row-meta';
+    if (item.limit !== null) {
+      var badge = document.createElement('span');
+      badge.className = 'count-badge' + (item.severity ? ' sev-' + item.severity : '');
+      var unitLabel = item.limitUnit === 'chars' ? '자' : '개';
+      badge.textContent = item.count + ' / ' + item.limit + unitLabel;
+      meta.appendChild(badge);
+    }
+    if (item.edited) {
+      var editedBadge = document.createElement('span');
+      editedBadge.className = 'edited-badge';
+      editedBadge.textContent = '수정됨';
+      meta.appendChild(editedBadge);
+      var revertBtn = document.createElement('button');
+      revertBtn.className = 'revert-btn';
+      revertBtn.type = 'button';
+      revertBtn.textContent = '원본으로 되돌리기';
+      revertBtn.addEventListener('click', function () {
+        revertItem(item.id).then(function (res) { render(res.display); toast('원본으로 되돌렸습니다.'); });
+      });
+      meta.appendChild(revertBtn);
+    }
+    box.appendChild(meta);
+    return box;
+  }
+
+  function startEdit(box, item) {
+    var existing = box.querySelector('textarea.value-edit');
+    if (existing) { existing.focus(); return; }
+    var view = box.querySelector('.value-view');
+    var textarea = document.createElement('textarea');
+    textarea.className = 'value-edit';
+    textarea.value = item.value;
+    textarea.setAttribute('data-item-id', item.id);
+    view.replaceWith(textarea);
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    function commit() {
+      var newValue = textarea.value;
+      if (newValue === item.value) { renderSections(display); return; }
+      saveEdit(item.id, newValue).then(function (res) { render(res.display); toast('수정 내용을 저장했습니다.'); });
+    }
+    textarea.addEventListener('blur', commit);
+    textarea.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { renderSections(display); }
+      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { textarea.blur(); }
+    });
+  }
+
+  function buildActions(item) {
+    var actions = document.createElement('div');
+    actions.className = 'row-actions';
+    var line1 = document.createElement('div');
+    line1.className = 'btn-line';
+
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'copy-btn';
+    copyBtn.textContent = '복사';
+    copyBtn.addEventListener('click', function () {
+      // 편집 중이면(아직 저장 전) 화면의 textarea 값을 그대로 복사한다 — 완료조건 #2.
+      var row = copyBtn.closest('.row');
+      var liveTextarea = row ? row.querySelector('textarea.value-edit[data-item-id="' + item.id + '"]') : null;
+      var text = liveTextarea ? liveTextarea.value : item.value;
+      copyText(text).then(function (ok) {
+        if (ok !== false) {
+          var original = copyBtn.textContent;
+          copyBtn.textContent = '복사됨 ✓';
+          copyBtn.classList.add('copied');
+          setTimeout(function () { copyBtn.textContent = original; copyBtn.classList.remove('copied'); }, 800);
+        }
+      });
+    });
+    line1.appendChild(copyBtn);
+
+    var checkBtn = document.createElement('button');
+    checkBtn.type = 'button';
+    checkBtn.className = 'check-btn' + (item.checked ? ' checked' : '');
+    checkBtn.textContent = '✓';
+    checkBtn.title = item.checked ? '완료 취소' : '완료 표시';
+    checkBtn.addEventListener('click', function () {
+      var checks = {};
+      checks[item.id] = !item.checked;
+      saveStatePatch({ checks: checks }).then(function (res) { render(res.display); });
+    });
+    line1.appendChild(checkBtn);
+    actions.appendChild(line1);
+
+    if (item.hasFolder) {
+      var folderBtn = document.createElement('button');
+      folderBtn.type = 'button';
+      folderBtn.textContent = '📁 폴더 열기';
+      folderBtn.addEventListener('click', function () {
+        revealFolder('').then(function () { toast('폴더를 열었습니다.'); }).catch(function (e) { toast(e.message); });
+      });
+      actions.appendChild(folderBtn);
+    }
+
+    return actions;
+  }
+
+  // --- URL apply ---
+  function isValidHttpUrl(value) {
+    if (!value) return true;
+    try {
+      var u = new URL(value);
+      return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch (e) { return false; }
+  }
+  $('applyUrlBtn').addEventListener('click', function () {
+    var input = $('youtubeUrlInput');
+    var value = input.value.trim();
+    if (!isValidHttpUrl(value)) {
+      input.classList.add('invalid');
+      toast('올바른 URL 형식이 아닙니다.');
+      return;
+    }
+    input.classList.remove('invalid');
+    saveStatePatch({ youtubeUrl: value }).then(function (res) { render(res.display); toast('URL을 적용했습니다.'); });
+  });
+  $('youtubeUrlInput').addEventListener('input', function () { $('youtubeUrlInput').classList.remove('invalid'); });
+
+  // --- boot ---
+  fetchDisplay().then(function (data) {
+    if (data.error) {
+      $('sections').innerHTML = '<div class="empty-state">' + data.error + '</div>';
+      return;
+    }
+    render(data);
+  }).catch(function () {
+    $('sections').innerHTML = '<div class="empty-state">텍스트 팩을 불러오지 못했습니다.</div>';
+  });
+})();
+</script>
+</body>
+</html>

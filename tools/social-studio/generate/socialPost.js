@@ -49,10 +49,19 @@ export function generateInstagram(normalized, { channelId, hashtagPool, limits, 
 // X
 // ---------------------------------------------------------------------------
 
-/** Effective length: any {youtubeUrl}-bearing substring is charged at platformLimits.x.urlLength regardless of its real length (spec 3④). */
-function effectiveXLength(text, realUrl, urlLength) {
-  if (!realUrl || !text.includes(realUrl)) return text.length;
-  return text.length - realUrl.length + urlLength;
+/**
+ * Effective length: X shortens ANY http(s) URL to its own t.co-style link
+ * and always counts that as platformLimits.x.urlLength chars, regardless of
+ * the URL's real length (spec 3④) — so this detects a URL substring by
+ * pattern rather than requiring the caller to already know its exact value.
+ * That matters for S2's pack.html screen: it needs to recompute this count
+ * for whatever URL ended up in x.main, including one baked in at S1
+ * generation time before the screen ever saw it.
+ */
+export function effectiveXLength(text, urlLength) {
+  const match = text.match(/https?:\/\/\S+/);
+  if (!match) return text.length;
+  return text.length - match[0].length + urlLength;
 }
 
 function pickLyricQuote(normalized, setName) {
@@ -79,7 +88,7 @@ export function generateX(normalized, { channelId, limits, youtubeUrl } = {}) {
     warnings.push('유튜브 URL이 없어 X 본문을 생성하지 않았습니다.');
   } else {
     const mainPick = selectTemplateWithinLimit(templates, slots, setName, 'x-main', { role: 'main' }, {
-      measure: (text) => effectiveXLength(text, youtubeUrl, limits.x.urlLength),
+      measure: (text) => effectiveXLength(text, limits.x.urlLength),
       maxLength: limits.x.postMax,
       maxRetries: 5,
     });
