@@ -1,0 +1,8 @@
+{
+  "_note": "여기에는 키를 절대 넣지 않는다. 키는 .env(gitignore됨)에만 둔다. blogIdEnv는 실제 블로그 ID가 들어있는 환경변수 '이름'일 뿐이다.",
+  "channels": {
+    "jp-2030": { "blogIdEnv": "HATENA_BLOG_ID", "category": "音楽" }
+  },
+  "schedule": { "hourJst": 9, "minOffsetDays": 1, "maxOffsetDays": 14 },
+  "retry": { "maxAttempts": 3, "backoffMs": [1000, 3000, 9000] }
+}

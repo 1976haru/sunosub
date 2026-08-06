@@ -202,7 +202,7 @@ S0 완료 조건 5번("`nouns.json`을 비우면 `coverage.nouns`가 0에 가깝
   제목·설명은 S1에서 새로 만든다.
 - `set.assets.shorts[]`는 스키마에 자리만 정의되어 있고 S0는 값을 채우지 않는다. S4에서
   구현한다.
-- S2(화면), S5(발행)는 이 문서의 범위 밖이다. S3(중복·규칙 검사)은 11장 참조.
+- S2(화면)는 이 문서의 범위 밖이다. S3(중복·규칙 검사)은 11장, S5(하테나 발행)는 13장 참조.
 
 ---
 
@@ -262,7 +262,42 @@ S1의 생성 로직을 모른다.
 
 ---
 
-## 12. 샘플 데이터에 대한 메모
+## 13. 하테나 AtomPub 예약 발행 (S5)
+
+`publish/hatena.js`가 `out/{setName}/textpack.json`의 `hatena` 항목을 읽어 하테나 블로그에
+**예약** 발행한다. social-studio 전체에서 유일하게 외부 네트워크를 쓰는 코드이며, 그만큼
+안전장치가 다른 어떤 지시문보다 많다: 드라이런이 기본값, `.env` 없이는 실발행 불가,
+일본 채널(`jp-*`)이 아니면 거부, 같은 `setName` 재발행 거부, 시각 검사(과거·범위 밖 거부),
+API 키는 로그·리포트 어디에도 남기지 않는다(`publish/wsse.js`의 `maskSecret()`).
+
+### 실행
+
+```bash
+node tools/social-studio/publish/hatena.js <setName>            # 드라이런(기본값, 네트워크 0건)
+node tools/social-studio/publish/hatena.js <setName> --publish  # 실발행(.env 필요)
+```
+
+### 알려진 한계 — `textpack.hatena`가 아직 실제로 채워지지 않는다
+
+S1의 `generate/blogPost.js`의 `generateHatena()`는 현재 시점에 **항상 스텁 경로**를 탄다 —
+`data/lexicon/ja/*.json`이 S0에서 빈 골격으로만 존재하고(`docs/social-package-spec.md` 6장),
+`templates/*/hatena.json`도 아직 없기 때문에, 실제 일본 채널 세트를 돌려도
+`textpack.hatena.title`/`body`는 항상 `null`이다. `publish/hatena.js`는 이 상태를 명시적으로
+잡아 오류를 던지도록 만들어져 있고(`textpack.json에 하테나 항목(title/body)이 없습니다`),
+S5 자체의 로직(WSSE·XML·사전 검사 5종)은 합성 fixture로 완전히 검증했다. 실제 일본어
+세트로 끝까지 돌리려면 ja 사전과 하테나 템플릿을 먼저 채워야 한다.
+
+### 완료조건 10번 — 검증되지 않음
+
+실제 예약 발행이 하테나 관리 화면에 "예약"으로 표시되는지는 실제 하테나 계정과 API 키가
+있어야 확인할 수 있다. 이 작업을 수행한 시점에는 그런 계정이 없어 **드라이런까지만
+검증되었다** — XML 생성, WSSE 헤더 생성, 사전 검사 5종은 전부 자동화 테스트와 실제 실행
+결과로 확인했지만, 실제 하테나 서버가 그 요청을 받아 정말로 예약 상태로 처리하는지는
+별도로 확인해야 한다.
+
+---
+
+## 14. 샘플 데이터에 대한 메모
 
 이 저장소에는 TASK-S0 지시문이 근거로 든 실제 샘플 파일
 (`20260804_굿모닝추억라디오_70년대감성.json`, 58,085 bytes)이 존재하지 않았다.
