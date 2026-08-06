@@ -12,6 +12,7 @@ import * as postingCadence from '../lint/rules/postingCadence.js';
 import * as wordRepetition from '../lint/rules/wordRepetition.js';
 import { loadThresholds, runSocialLint, runSocialLintAndSave, runLintWithRegeneration } from '../lint/socialLint.js';
 import { appendEntry, loadHistory } from '../store/lintHistory.js';
+import * as historyStore from '../store/history.js';
 import { runSetPackPipeline } from '../parse/setPackLoader.js';
 import { runTextPackPipeline } from '../generate/textPack.js';
 
@@ -346,6 +347,12 @@ test('condition 1: a real run on the sample set writes lint-report.json with a s
   const backupExists = fs.existsSync(HISTORY_PATH);
   const backup = backupExists ? fs.readFileSync(HISTORY_PATH, 'utf8') : null;
   if (backupExists) fs.unlinkSync(HISTORY_PATH);
+  // TASK-S6: runSocialLintAndSave now also records into store/data/history.json
+  // (see lint/socialLint.js) — back that up too, same reasoning as HISTORY_PATH
+  // above, so this test doesn't leave real fixture data behind for later runs.
+  const dataDirExisted = fs.existsSync(historyStore.paths.DATA_DIR);
+  const dataDirBackup = `${historyStore.paths.DATA_DIR}.testbackup`;
+  if (dataDirExisted) fs.renameSync(historyStore.paths.DATA_DIR, dataDirBackup);
   try {
     const { normalized } = runSetPackPipeline(FIXTURE_PATH);
     runTextPackPipeline(normalized, {});
@@ -360,6 +367,8 @@ test('condition 1: a real run on the sample set writes lint-report.json with a s
   } finally {
     if (backup !== null) fs.writeFileSync(HISTORY_PATH, backup, 'utf8');
     else if (fs.existsSync(HISTORY_PATH)) fs.unlinkSync(HISTORY_PATH);
+    if (fs.existsSync(historyStore.paths.DATA_DIR)) fs.rmSync(historyStore.paths.DATA_DIR, { recursive: true, force: true });
+    if (dataDirExisted) fs.renameSync(dataDirBackup, historyStore.paths.DATA_DIR);
   }
 });
 

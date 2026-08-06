@@ -12,7 +12,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pickDistinctIndices } from './rotation.js';
+import { pickDistinctIndices, pickDistinctIndicesExcluding } from './rotation.js';
+import * as history from '../store/history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_ROOT = path.join(__dirname, '..', 'templates');
@@ -110,33 +111,66 @@ function matchesFilter(template, filter) {
 }
 
 /**
+ * TASK-S6 — resolves the rotation order for `pool`, optionally excluding
+ * templates store/history.js says were already PUBLISHED for this
+ * channel+platform (never just generated — see history.js's own doc
+ * comment on getUsedTemplateIds). `historyContext` is entirely optional and
+ * additive: omit it (or pass null) and this is byte-for-byte the same
+ * pickDistinctIndices() call every pre-S6 caller already made.
+ *
+ * A failed or unavailable history lookup — no store/data/history.json yet,
+ * a corrupt file, whatever — falls back to the plain rotation order rather
+ * than throwing, so template selection behaves exactly as it did before S6
+ * whenever history isn't usable (spec 4-1: "기록 조회가 실패하거나 파일이
+ * 없으면 기존 시드 방식만 수행한다").
+ *
+ * @param {{channelId: string, platform: string, weeks?: number}} [historyContext]
+ * @returns {{order: number[], warning: string|null}}
+ */
+function resolveRotationOrder(pool, setName, salt, historyContext) {
+  if (!historyContext || !historyContext.channelId || !historyContext.platform) {
+    return { order: pickDistinctIndices(setName, salt, pool.length, pool.length), warning: null };
+  }
+  let usedIds;
+  try {
+    usedIds = new Set(history.getUsedTemplateIds(historyContext.channelId, historyContext.platform, historyContext.weeks));
+  } catch {
+    return { order: pickDistinctIndices(setName, salt, pool.length, pool.length), warning: null };
+  }
+  if (usedIds.size === 0) {
+    return { order: pickDistinctIndices(setName, salt, pool.length, pool.length), warning: null };
+  }
+  const { order, allExcluded } = pickDistinctIndicesExcluding(setName, salt, pool.length, (idx) => usedIds.has(pool[idx].id));
+  const warning = allExcluded
+    ? `${historyContext.platform} 템플릿이 최근 발행 기록 기준으로 전부 소진되어, 제외 없이 전체 풀에서 다시 선택합니다.`
+    : null;
+  return { order, warning };
+}
+
+/**
  * Picks ONE usable template via deterministic rotation (rotation.js), skips
  * any whose slots don't all resolve, and throws TemplatePoolError only when
  * literally none of them do — never substitutes a default sentence.
+ *
+ * @param {{channelId: string, platform: string, weeks?: number}} [historyContext] - TASK-S6, optional
  */
-export function selectTemplate(templates, slots, setName, salt, filter = null) {
+export function selectTemplate(templates, slots, setName, salt, filter = null, historyContext = null) {
   const pool = templates.filter((t) => matchesFilter(t, filter));
   if (pool.length === 0) {
     throw new TemplatePoolError(`조건에 맞는 템플릿이 없습니다 (filter=${JSON.stringify(filter)}).`);
   }
-  const order = pickDistinctIndices(setName, salt, pool.length, pool.length);
+  const { order, warning } = resolveRotationOrder(pool, setName, salt, historyContext);
   const attempts = Math.min(order.length, MAX_TEMPLATE_ATTEMPTS);
   for (let i = 0; i < attempts; i += 1) {
     const template = pool[order[i]];
     const filled = fillSlots(template.text, slots);
     if (filled !== null) {
-      return { id: template.id, text: filled };
+      return { id: template.id, text: filled, ...(warning ? { warning } : {}) };
     }
   }
   throw new TemplatePoolError('모든 템플릿의 슬롯을 채울 수 없어 사용할 템플릿이 없습니다.');
 }
 
-/**
- * Picks up to `count` DISTINCT filled results (by rendered text) via
- * rotation — used for the 3 youtube title candidates. Never throws on a
- * shortfall (returns fewer than `count` if the pool can't supply more);
- * throws only if it can't fill even one.
- */
 /**
  * Like selectTemplate(), but also enforces a platform character limit
  * (data/platformLimits.json) by retrying with the NEXT rotated template when
@@ -148,14 +182,16 @@ export function selectTemplate(templates, slots, setName, salt, filter = null) {
  * Returns { id, text, withinLimit: true } on success, or
  * { id: null, text: null, withinLimit: false } if nothing fit within the
  * retry budget (caller is expected to leave the field empty and warn).
+ *
+ * @param {{channelId: string, platform: string, weeks?: number}} [historyContext] - TASK-S6, optional
  */
-export function selectTemplateWithinLimit(templates, slots, setName, salt, filter, options = {}) {
+export function selectTemplateWithinLimit(templates, slots, setName, salt, filter, options = {}, historyContext = null) {
   const { measure = (s) => s.length, maxLength = Infinity, maxRetries = 5 } = options;
   const pool = templates.filter((t) => matchesFilter(t, filter));
   if (pool.length === 0) {
     throw new TemplatePoolError(`조건에 맞는 템플릿이 없습니다 (filter=${JSON.stringify(filter)}).`);
   }
-  const order = pickDistinctIndices(setName, salt, pool.length, pool.length);
+  const { order, warning } = resolveRotationOrder(pool, setName, salt, historyContext);
   const attempts = Math.min(order.length, MAX_TEMPLATE_ATTEMPTS);
   let retries = 0;
   for (let i = 0; i < attempts && retries < maxRetries; i += 1) {
@@ -163,19 +199,27 @@ export function selectTemplateWithinLimit(templates, slots, setName, salt, filte
     const filled = fillSlots(template.text, slots);
     if (filled === null) continue;
     if (measure(filled) <= maxLength) {
-      return { id: template.id, text: filled, withinLimit: true };
+      return { id: template.id, text: filled, withinLimit: true, ...(warning ? { warning } : {}) };
     }
     retries += 1;
   }
   return { id: null, text: null, withinLimit: false };
 }
 
-export function selectDistinctTemplates(templates, slots, setName, salt, count, filter = null) {
+/**
+ * Picks up to `count` DISTINCT filled results (by rendered text) via
+ * rotation — used for the 3 youtube title candidates. Never throws on a
+ * shortfall (returns fewer than `count` if the pool can't supply more);
+ * throws only if it can't fill even one.
+ *
+ * @param {{channelId: string, platform: string, weeks?: number}} [historyContext] - TASK-S6, optional
+ */
+export function selectDistinctTemplates(templates, slots, setName, salt, count, filter = null, historyContext = null) {
   const pool = templates.filter((t) => matchesFilter(t, filter));
   if (pool.length === 0) {
     throw new TemplatePoolError(`조건에 맞는 템플릿이 없습니다 (filter=${JSON.stringify(filter)}).`);
   }
-  const order = pickDistinctIndices(setName, salt, pool.length, pool.length);
+  const { order } = resolveRotationOrder(pool, setName, salt, historyContext);
   const attempts = Math.min(order.length, MAX_TEMPLATE_ATTEMPTS);
   const results = [];
   const seenText = new Set();

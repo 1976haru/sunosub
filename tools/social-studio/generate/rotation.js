@@ -49,6 +49,33 @@ export function pickDistinctIndices(setName, salt, length, count) {
 }
 
 /**
+ * TASK-S6 — like pickDistinctIndices, but skips indices the caller marks as
+ * "excluded" (used to keep already-published templates out of rotation —
+ * see store/history.js's getUsedTemplateIds and slotFiller.js's
+ * historyContext parameter). If EVERY index is excluded, exclusion is
+ * dropped entirely and the full, ordinary order is returned instead
+ * (spec 4-1 step 4: an exhausted pool must never block generation) —
+ * `allExcluded` tells the caller this happened so it can log a warning.
+ *
+ * A brand-new export, not a change to pickDistinctIndices' own behavior —
+ * every existing caller of pickDistinctIndices is completely unaffected.
+ *
+ * @param {(index: number) => boolean} [isExcluded] - called with indices into [0, length)
+ */
+export function pickDistinctIndicesExcluding(setName, salt, length, isExcluded) {
+  const fullOrder = pickDistinctIndices(setName, salt, length, length);
+  if (typeof isExcluded !== 'function') return { order: fullOrder, allExcluded: false };
+
+  const filtered = [];
+  const scanCap = fullOrder.length; // explicit bound — fullOrder is already length-capped
+  for (let i = 0; i < scanCap; i += 1) {
+    if (!isExcluded(fullOrder[i])) filtered.push(fullOrder[i]);
+  }
+  if (filtered.length === 0) return { order: fullOrder, allExcluded: true };
+  return { order: filtered, allExcluded: false };
+}
+
+/**
  * Rotates the starting offset used to slice a fixed-size window (e.g. 15 of
  * 45 pooled hashtags) out of a pool, so different sets pull a different
  * (but internally stable) slice.

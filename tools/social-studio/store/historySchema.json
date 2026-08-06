@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://creator-studio.local/social-studio/historySchema.json",
+  "title": "social-studio publish history (S6)",
+  "description": "Reference schema for store/data/history.json. Documents the contract; store/history.js is the ONLY module that reads/writes this file directly (spec completion condition #11) — no schema-validator dependency is used at runtime.",
+  "type": "object",
+  "required": ["version", "entries"],
+  "properties": {
+    "version": { "const": 1 },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["id", "setName", "channelId", "platform", "status", "generatedAt"],
+      "properties": {
+        "id": { "type": "string", "description": "`{setName}#{platform}` — the upsert key. One entry per (set, platform) pair, never per item." },
+        "setName": { "type": "string" },
+        "channelId": { "type": "string" },
+        "platform": { "type": "string", "description": "e.g. youtube, instagram, x, facebook, naver, shorts, hatena" },
+        "status": { "type": "string", "enum": ["generated", "published", "discarded"] },
+        "generatedAt": { "type": "string", "description": "ISO8601 — when S1 produced this platform's content." },
+        "publishedAt": { "type": ["string", "null"], "description": "ISO8601 — set only when status becomes 'published'." },
+        "templateIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Every templateId S1 used for this platform's items. Only counted toward exhaustion (rules/templateReuse.js) when status === 'published' — see spec section 0."
+        },
+        "hashtags": { "type": "array", "items": { "type": "string" } },
+        "fingerprint": { "type": "string", "description": "Opaque content marker (see lint/similarity.js's contentFingerprint) — never the raw generated text." },
+        "youtubeUrl": { "type": "string" }
+      }
+    }
+  }
+}

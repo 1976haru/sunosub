@@ -30,6 +30,7 @@ import {
   resolveWithinOutDir,
   PackStateError,
 } from '../store/packState.js';
+import * as history from '../store/history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACK_HTML_PATH = path.join(__dirname, '..', 'web', 'pack.html');
@@ -79,6 +80,28 @@ function isValidHttpUrl(value) {
   }
 }
 
+/**
+ * TASK-S6 — a platform section counts as "published" in store/data/history.json
+ * only once EVERY item in that section is checked on the copy/paste screen
+ * (spec 4-3: 완료 체크). Runs after every /state write so checking or
+ * unchecking any box keeps history.js's status in sync with what the screen
+ * actually shows — checked-complete -> 'published', anything less ->
+ * 'generated'. A missing history entry (lint hasn't run yet for this
+ * set/platform, so there's nothing to flip) is silently skipped rather than
+ * surfaced as an error to the user.
+ */
+function syncPublishStatus(setName, display) {
+  for (const section of display.sections) {
+    const sectionItems = display.items.filter((i) => i.section === section);
+    const complete = sectionItems.length > 0 && sectionItems.every((i) => i.checked);
+    try {
+      history.setStatus(`${setName}#${section}`, complete ? 'published' : 'generated');
+    } catch {
+      // no history entry yet for this set/platform — nothing to sync
+    }
+  }
+}
+
 // POST /social-studio/api/pack/:setName/state — youtubeUrl and/or checkmarks
 router.post('/api/pack/:setName/state', (req, res, next) => {
   try {
@@ -102,7 +125,9 @@ router.post('/api/pack/:setName/state', (req, res, next) => {
       patch.checks = checks;
     }
     const state = saveState(setName, patch);
-    res.json({ ok: true, state, display: buildDisplayItems(setName) });
+    const display = buildDisplayItems(setName);
+    syncPublishStatus(setName, display);
+    res.json({ ok: true, state, display });
   } catch (error) {
     next(error);
   }

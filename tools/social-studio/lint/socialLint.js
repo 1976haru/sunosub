@@ -22,13 +22,11 @@ import * as postingCadence from './rules/postingCadence.js';
 import * as wordRepetition from './rules/wordRepetition.js';
 import { extractProseFields, contentFingerprint } from './similarity.js';
 import {
-  loadHistory,
-  appendEntry,
-  findRecentEntries,
   resolvePostingDate,
   listOtherSetsInSameWeek,
   loadTextpackForSet,
 } from '../store/lintHistory.js';
+import * as history from '../store/history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -96,6 +94,97 @@ function buildFingerprints(textpack) {
   return result;
 }
 
+/** One combined fingerprint string per platform, joining every prose field under that platform's path prefix — same collapse migrate.js uses. */
+function fingerprintForPlatform(fingerprints, platform) {
+  const parts = Object.entries(fingerprints)
+    .filter(([itemPath]) => itemPath.split('.')[0] === platform)
+    .map(([, fp]) => fp);
+  return parts.length ? parts.join(',') : undefined;
+}
+
+const MAX_HISTORY_PLATFORMS_SCANNED = 20; // explicit bound
+
+// Duplicated from lint/rules/hashtagOverlap.js's own HASHTAG_PLATFORMS on
+// purpose — that rule module isn't in S6's allow-list and doesn't export
+// the constant (same "두 벌은 의도적으로" reasoning as CLAUDE.md 3.3's
+// stripLeadingNumber()).
+const HASHTAG_PLATFORMS = ['youtube', 'instagram'];
+
+function safeGetPublished(channelId, platform, weeks) {
+  try {
+    return history.getPublished(channelId, platform, weeks);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * TASK-S6 — recentEntries adapter. templateReuse.js / hashtagOverlap.js /
+ * postingCadence.js are NOT in S6's allow-list and already expect a
+ * specific `recentEntries` shape carried over from store/lintHistory.js
+ * (per-SET records: itemId-keyed templateIds, platform-keyed hashtags,
+ * platforms[] + postingDate). store/history.js instead stores one record
+ * per SET-PER-PLATFORM with a flat templateIds array — this file is the
+ * only place allowed to reshape one into the other; nothing else may read
+ * store/data/history.json directly (spec completion condition #11).
+ *
+ * Each rule gets its OWN recentEntries list, sourced from whichever
+ * history.js query matches what that rule is actually supposed to count:
+ *  - R2 (template reuse) must never be satisfied by a merely-generated
+ *    draft (spec section 0's core rule) -> history.getPublished() only.
+ *  - R3 (hashtag overlap) is about not repeating tags in near-future
+ *    generation, not just what shipped -> history.getRecentHashtags(),
+ *    which already includes 'generated' (excludes only 'discarded').
+ *  - R6 (posting cadence) is a real posting-schedule collision check, so an
+ *    unpublished draft can't crowd it -> history.getPublished() only.
+ * A lookup failure for one platform degrades to "no data for that
+ * platform" rather than aborting the run — R2/R3/R6 already treat an empty
+ * recentEntries as "첫 실행" and skip with a note, exactly the pre-S6
+ * fallback (spec 4-1's "조회가 실패하면 값이 없는 것처럼 진행한다" applied
+ * the same way here).
+ */
+function buildTemplateReuseEntries(textpack, setName, weeks) {
+  const platforms = [...new Set(Object.keys(textpack.templateIds || {}).map((itemId) => itemId.split('.')[0]))].slice(0, MAX_HISTORY_PLATFORMS_SCANNED);
+  const entries = [];
+  for (const platform of platforms) {
+    for (const e of safeGetPublished(textpack.channelId, platform, weeks)) {
+      if (e.setName === setName) continue;
+      const templateIds = {};
+      (e.templateIds || []).forEach((templateId, i) => {
+        templateIds[`${platform}.${i}`] = templateId;
+      });
+      entries.push({ setName: e.setName, channelId: e.channelId, templateIds });
+    }
+  }
+  return entries;
+}
+
+function buildHashtagEntries(textpack, weeks) {
+  const entries = [];
+  for (const platform of HASHTAG_PLATFORMS) {
+    let tags;
+    try {
+      tags = history.getRecentHashtags(textpack.channelId, platform, weeks);
+    } catch {
+      tags = [];
+    }
+    if (tags.length > 0) entries.push({ hashtags: { [platform]: tags } });
+  }
+  return entries;
+}
+
+function buildCadenceEntries(textpack, setName, weeks) {
+  const platforms = postingCadence.collectPlatforms(textpack).slice(0, MAX_HISTORY_PLATFORMS_SCANNED);
+  const entries = [];
+  for (const platform of platforms) {
+    for (const e of safeGetPublished(textpack.channelId, platform, weeks)) {
+      if (e.setName === setName) continue;
+      entries.push({ setName: e.setName, platforms: [platform], postingDate: e.publishedAt || e.generatedAt });
+    }
+  }
+  return entries;
+}
+
 // ---------------------------------------------------------------------------
 // Core check
 // ---------------------------------------------------------------------------
@@ -113,14 +202,11 @@ export function runSocialLint(setName, options = {}) {
     throw new Error(`textpack.json이 없습니다: ${setName}`);
   }
 
-  const history = options.history || loadHistory();
   const currentDate = resolvePostingDate(textpack) || new Date();
-  const recentEntries = findRecentEntries(history, {
-    channelId: textpack.channelId,
-    referenceDate: currentDate,
-    weeks: thresholds.R2_templateReuseWeeks,
-    excludeSetName: setName,
-  });
+  const weeks = thresholds.R2_templateReuseWeeks;
+  const recentEntriesForTemplateReuse = buildTemplateReuseEntries(textpack, setName, weeks);
+  const recentEntriesForHashtag = buildHashtagEntries(textpack, weeks);
+  const recentEntriesForCadence = buildCadenceEntries(textpack, setName, weeks);
 
   const candidateSetNames = listOtherSetsInSameWeek(setName, textpack.channelId).slice(0, MAX_CANDIDATE_SETS);
   const candidates = [];
@@ -136,11 +222,11 @@ export function runSocialLint(setName, options = {}) {
 
   const ruleResults = [
     crossChannel.check(textpack, { threshold: thresholds.R1_crossChannelSimilarity, candidates }),
-    templateReuse.check(textpack, { weeks: thresholds.R2_templateReuseWeeks, recentEntries, poolSizes }),
-    hashtagOverlap.check(textpack, { threshold: thresholds.R3_hashtagOverlapRatio, weeks: thresholds.R2_templateReuseWeeks, recentEntries }),
+    templateReuse.check(textpack, { weeks, recentEntries: recentEntriesForTemplateReuse, poolSizes }),
+    hashtagOverlap.check(textpack, { threshold: thresholds.R3_hashtagOverlapRatio, weeks, recentEntries: recentEntriesForHashtag }),
     platformRules.check(textpack, { platformLimits }),
     bannedPhrasesRule.check(textpack, { phrases }),
-    postingCadence.check(textpack, { maxPostsPer24h: thresholds.R6_maxPostsPer24h, currentDate, recentEntries }),
+    postingCadence.check(textpack, { maxPostsPer24h: thresholds.R6_maxPostsPer24h, currentDate, recentEntries: recentEntriesForCadence }),
     wordRepetition.check(textpack, { maxNounRepeat: thresholds.R7_maxNounRepeat }),
   ];
 
@@ -163,7 +249,13 @@ export function runSocialLint(setName, options = {}) {
   };
 }
 
-/** runSocialLint() + write lint-report.json + append a lintHistory.json entry (fingerprints only, never raw text). */
+/**
+ * runSocialLint() + write lint-report.json + record one store/data/history.json
+ * entry PER PLATFORM (status defaults to 'generated' — record() preserves an
+ * existing 'published'/'discarded' status on re-run rather than resetting
+ * it, see store/history.js). lintHistory.json is no longer written here;
+ * once store/migrate.js has merged it, it's dead (spec section 4-2).
+ */
 export function runSocialLintAndSave(setName, options = {}) {
   const report = runSocialLint(setName, options);
   const outDir = path.join(OUT_ROOT, setName);
@@ -172,21 +264,27 @@ export function runSocialLintAndSave(setName, options = {}) {
 
   if (options.recordHistory !== false) {
     const textpack = options.textpack || loadTextpackForSet(setName);
-    const thresholds = options.thresholds || loadThresholds();
-    const entry = {
-      setName,
-      channelId: textpack.channelId,
-      checkedAt: report.checkedAt,
-      postingDate: (resolvePostingDate(textpack) || new Date()).toISOString(),
-      platforms: postingCadence.collectPlatforms(textpack),
-      templateIds: textpack.templateIds || {},
-      hashtags: {
-        youtube: textpack.youtube?.hashtags || [],
-        instagram: textpack.instagram?.hashtags || [],
-      },
-      fingerprints: buildFingerprints(textpack),
-    };
-    appendEntry(entry, thresholds.historyMaxEntries);
+    const fingerprints = buildFingerprints(textpack);
+    const platforms = postingCadence.collectPlatforms(textpack).slice(0, MAX_HISTORY_PLATFORMS_SCANNED);
+    for (const platform of platforms) {
+      const templateIds = Object.entries(textpack.templateIds || {})
+        .filter(([itemId]) => itemId.split('.')[0] === platform)
+        .map(([, templateId]) => templateId);
+      const fingerprint = fingerprintForPlatform(fingerprints, platform);
+      try {
+        history.record({
+          setName,
+          channelId: textpack.channelId,
+          platform,
+          generatedAt: report.checkedAt,
+          templateIds,
+          hashtags: textpack[platform]?.hashtags || [],
+          ...(fingerprint ? { fingerprint } : {}),
+        });
+      } catch {
+        // a history.js write failure must never block the lint report itself from being saved
+      }
+    }
   }
 
   return { report, outDir };
@@ -203,7 +301,7 @@ export function runSocialLintAndSave(setName, options = {}) {
  *   Called with the current textpack and the list of item paths that must be
  *   redone (report.regenerate). Must return an updated textpack, or a
  *   falsy value to stop early.
- * @param {object} options - forwarded to runSocialLint (thresholds/history overrides).
+ * @param {object} options - forwarded to runSocialLint (thresholds/textpack overrides).
  */
 export function runLintWithRegeneration(setName, regenerateFn, options = {}) {
   const thresholds = options.thresholds || loadThresholds();
