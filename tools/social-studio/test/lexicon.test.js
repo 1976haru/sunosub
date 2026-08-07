@@ -98,6 +98,57 @@ test('computeSourceCoverage is 0 when nothing from that source matched (empty-di
   assert.equal(computeSourceCoverage(matchedTerms, unknownTerms, 'nouns'), 0);
 });
 
+// --- TASK-S7: morphological fallback (plural/-ing/-ed forms resolve to a base entry) ---
+
+test('S7: scanTextMulti resolves a plural via the singular dictionary entry ("windows" -> "window")', () => {
+  const nouns = loadLexicon('ko', 'nouns');
+  const timewords = loadLexicon('ko', 'timewords');
+  const stopwords = loadStopwords();
+  const { matchedTerms, unknownTerms } = scanTextMulti(
+    'every warm windows',
+    [{ name: 'timewords', lexicon: timewords }, { name: 'nouns', lexicon: nouns }],
+    stopwords
+  );
+  const hit = matchedTerms.find((m) => m.term === 'windows');
+  assert.ok(hit, `expected "windows" to resolve via the "window" entry, unknownTerms: ${unknownTerms.join(', ')}`);
+  assert.equal(hit.ko, '창문');
+});
+
+test('S7: scanTextMulti resolves a direct -ing stem ("rolling" -> "roll")', () => {
+  const nouns = loadLexicon('ko', 'nouns');
+  const stopwords = loadStopwords();
+  const { matchedTerms } = scanTextMulti('the record rolling on', [{ name: 'nouns', lexicon: nouns }], stopwords);
+  const hit = matchedTerms.find((m) => m.term === 'rolling');
+  assert.ok(hit, 'expected "rolling" to resolve via the "roll" entry');
+  assert.equal(hit.ko, '구르다');
+});
+
+test('S7: scanTextMulti resolves an -ing stem needing a silent-e restore ("sliding" -> "slide")', () => {
+  const nouns = loadLexicon('ko', 'nouns');
+  const stopwords = loadStopwords();
+  const { matchedTerms } = scanTextMulti('sliding across the floor', [{ name: 'nouns', lexicon: nouns }], stopwords);
+  const hit = matchedTerms.find((m) => m.term === 'sliding');
+  assert.ok(hit, 'expected "sliding" to resolve via the "slide" entry');
+  assert.equal(hit.ko, '미끄러지다');
+});
+
+test('S7: scanTextMulti resolves an -ing stem needing doubled-consonant undo ("stepping" -> "step")', () => {
+  const nouns = loadLexicon('ko', 'nouns');
+  const stopwords = loadStopwords();
+  const { matchedTerms } = scanTextMulti('stepping outside', [{ name: 'nouns', lexicon: nouns }], stopwords);
+  const hit = matchedTerms.find((m) => m.term === 'stepping');
+  assert.ok(hit, 'expected "stepping" to resolve via the "step" entry');
+  assert.equal(hit.ko, '걸음');
+});
+
+test('S7: the morphological fallback never invents a translation — a truly unknown word still reports unknown', () => {
+  const nouns = loadLexicon('ko', 'nouns');
+  const stopwords = loadStopwords();
+  const { matchedTerms, unknownTerms } = scanTextMulti('zzznonwordizing', [{ name: 'nouns', lexicon: nouns }], stopwords);
+  assert.equal(matchedTerms.length, 0);
+  assert.deepEqual(unknownTerms, ['zzznonwordizing']);
+});
+
 test('scanTextMulti bounds its loop even on a long, unmatchable input (no infinite loop)', () => {
   const nouns = loadLexicon('ko', 'nouns');
   const timewords = loadLexicon('ko', 'timewords');

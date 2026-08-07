@@ -19,6 +19,13 @@
  *   "swap nouns.json for an empty file" a clean, dependency-free way to prove
  *   the Korean text isn't hardcoded in this module. See lexicon.js's
  *   computeSourceCoverage for the mechanics.
+ * - TASK-S7: titleLocalized is optional as of Suno Weaver Studio's v2 export
+ *   format. A missing value falls back to the English `title` and is always
+ *   recorded via `titleLocalizedFallback` on the song; when the output
+ *   language is ko/ja (i.e. someone will actually read an English title where
+ *   a Korean/Japanese one belongs) it also lands in set.warnings, prefixed
+ *   `[중요]` once more than half the set fell back. Do not silence this —
+ *   see docs/social-package-spec.md §14a for why it must stay loud.
  */
 
 import fs from 'node:fs';
@@ -33,8 +40,14 @@ const CHANNELS_PATH = path.join(ROOT, 'data', 'channels.json');
 const OUT_ROOT = path.join(ROOT, 'out');
 
 const REQUIRED_META_FIELDS = ['setName', 'channelId', 'channelLabel', 'songCount', 'lyricLanguage'];
-const REQUIRED_SONG_FIELDS = ['trackNo', 'title', 'titleLocalized', 'listenerSituation', 'emotionArc', 'hookPhrase', 'lyrics'];
+// TASK-S7: titleLocalized dropped from Suno Weaver Studio's v2 export format
+// (upstream change, cause unconfirmed — see docs/social-package-spec.md §14a).
+// It is intentionally NOT in this list anymore; normalizeSetPack() falls back
+// to `title` and records the fallback instead of throwing. A missing song
+// title itself (`title`) still throws — that one nothing can substitute for.
+const REQUIRED_SONG_FIELDS = ['trackNo', 'title', 'listenerSituation', 'emotionArc', 'hookPhrase', 'lyrics'];
 const ALLOWED_LYRIC_LANGUAGES = new Set(['english', 'korean', 'japanese']);
+const OUTPUT_LANGUAGE_LABELS = { ko: '한국어', ja: '일본어' };
 
 // Explicit upper bound so a malformed/adversarial input can't drive an
 // unbounded loop below (TASK-S0 completion condition #9).
@@ -171,16 +184,16 @@ export function normalizeSetPack(data, initialWarnings = []) {
   const allMatchedTerms = [];
   const allUnknownTerms = [];
   const emotionPhraseResults = []; // {resolved: boolean} for coverage.emotions
+  let titleLocalizedFallbackCount = 0;
+  const upstreamWarnings = []; // song.warnings from Suno Weaver Studio itself (v2 field) — merged in with a "[상류]" prefix below
+
+  const scanSources = [
+    { name: 'timewords', lexicon: lex.timewords },
+    { name: 'nouns', lexicon: lex.nouns },
+  ];
 
   const normalizedSongs = data.songs.map((song) => {
-    const { matchedTerms, unknownTerms } = scanTextMulti(
-      song.listenerSituation,
-      [
-        { name: 'timewords', lexicon: lex.timewords },
-        { name: 'nouns', lexicon: lex.nouns },
-      ],
-      stopwords
-    );
+    const { matchedTerms, unknownTerms } = scanTextMulti(song.listenerSituation, scanSources, stopwords);
     allMatchedTerms.push(...matchedTerms);
     allUnknownTerms.push(...unknownTerms);
     for (const term of unknownTerms) {
@@ -190,6 +203,28 @@ export function normalizeSetPack(data, initialWarnings = []) {
         trackNo: song.trackNo,
         context: song.listenerSituation,
       });
+    }
+
+    // TASK-S7: v2-only field. Same scan treatment as listenerSituation — it's
+    // free scene-description text, just under a different key — so it's
+    // added to the same coverage.nouns pool rather than tracked separately.
+    // Absent on v1 files; scanTextMulti/lexicon lookups never run for null/undefined.
+    let lyricThemeMatchedTerms = [];
+    let lyricThemeUnknownTerms = [];
+    if (song.lyricThemeText) {
+      const themeScan = scanTextMulti(song.lyricThemeText, scanSources, stopwords);
+      lyricThemeMatchedTerms = themeScan.matchedTerms;
+      lyricThemeUnknownTerms = themeScan.unknownTerms;
+      allMatchedTerms.push(...lyricThemeMatchedTerms);
+      allUnknownTerms.push(...lyricThemeUnknownTerms);
+      for (const term of lyricThemeUnknownTerms) {
+        unknownTermEntries.push({
+          term,
+          field: 'lyricThemeText',
+          trackNo: song.trackNo,
+          context: song.lyricThemeText,
+        });
+      }
     }
 
     const emotionArc = parseEmotionArc(song.emotionArc, lex.transitions, lex.emotions);
@@ -209,24 +244,61 @@ export function normalizeSetPack(data, initialWarnings = []) {
       }
     }
 
+    // TASK-S7: titleLocalized is now optional (see REQUIRED_SONG_FIELDS
+    // comment above). Falling back to the English `title` is the only way to
+    // keep the pipeline running at all — but it must never happen quietly,
+    // hence titleLocalizedFallback + the set-level warning built after this
+    // map (needs the total count first).
+    const titleLocalizedFallback = !song.titleLocalized;
+    if (titleLocalizedFallback) titleLocalizedFallbackCount += 1;
+
+    if (Array.isArray(song.warnings)) {
+      for (const w of song.warnings) {
+        if (w) upstreamWarnings.push(`[상류] (트랙 ${song.trackNo}) ${w}`);
+      }
+    }
+
     return {
       trackNo: song.trackNo,
       title: song.title,
-      titleLocalized: song.titleLocalized,
+      titleLocalized: song.titleLocalized || song.title,
+      titleLocalizedFallback,
       seasonMoment: song.seasonMoment ?? null, // set.seasonHint promotion (below) clears this when uniform
       listenerSituation: {
         raw: song.listenerSituation,
         matchedTerms,
         unknownTerms,
       },
+      lyricThemeText: song.lyricThemeText
+        ? { raw: song.lyricThemeText, matchedTerms: lyricThemeMatchedTerms, unknownTerms: lyricThemeUnknownTerms }
+        : null,
       emotionArc,
       hookPhrase: song.hookPhrase,
       stylePrompt: song.stylePrompt ?? null,
       excludePrompt: song.excludePrompt ?? null,
       lyrics: song.lyrics,
       youtube: song.youtube ?? null,
+      // v2-only fields, passed through raw when present (v1 files leave these null/undefined) — see spec §7a.
+      distinctChoice: song.distinctChoice ?? null,
+      genreText: song.genreText ?? null,
+      pov: song.pov ?? null,
+      qualityScore: typeof song.qualityScore === 'number' ? song.qualityScore : null,
     };
   });
+
+  if (titleLocalizedFallbackCount > 0) {
+    const total = data.songs.length;
+    const langLabel = OUTPUT_LANGUAGE_LABELS[outputLanguage];
+    if (langLabel) {
+      const prefix = titleLocalizedFallbackCount > total / 2 ? '[중요] ' : '';
+      warnings.push(
+        `${prefix}titleLocalized 누락 — 영어 원제로 대체함 (${total}곡 중 ${titleLocalizedFallbackCount}곡). ${langLabel} 채널이므로 곡목록이 영어로 출력됩니다.`
+      );
+    }
+    // langLabel undefined (e.g. an eventual English-output channel) is not a
+    // warning target — English titles falling back to English is normal.
+  }
+  warnings.push(...upstreamWarnings);
 
   // --- seasonMoment set-level promotion (spec section 7) ---
   let seasonHint = null;

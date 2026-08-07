@@ -66,6 +66,32 @@ export function lookupExact(phrase, lexicon) {
   return entry ? { ko: entry.ko, category: entry.category ?? null } : null;
 }
 
+// Small, fixed set of candidate base forms for a single word (plural / -ing /
+// -ed), tried only when the exact surface form has no dictionary entry.
+// This is a lookup fallback, never a translation guess: a variant only
+// "succeeds" when it hits a real entries[] key someone already wrote a
+// Korean translation for (TASK-S7 — "정규화 규칙으로 처리한다", not one
+// dictionary entry per inflected form like "blowing"/"blows"). Bounded to a
+// handful of fixed-size array pushes, so it adds no unbounded loop.
+function morphologicalVariants(word) {
+  const variants = [];
+  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) {
+    variants.push(word.slice(0, -1)); // windows -> window
+  }
+  for (const suffix of ['ing', 'ed']) {
+    if (!word.endsWith(suffix) || word.length <= suffix.length + 2) continue;
+    const stem = word.slice(0, -suffix.length);
+    variants.push(stem); // rolling -> roll
+    variants.push(`${stem}e`); // sliding -> slide
+    const last = stem[stem.length - 1];
+    const prev = stem[stem.length - 2];
+    if (last && last === prev && !'aeiou'.includes(last)) {
+      variants.push(stem.slice(0, -1)); // stepping -> stepp -> step
+    }
+  }
+  return variants;
+}
+
 /**
  * Scans free text (e.g. listenerSituation) for dictionary terms using
  * longest-match-first over a sliding word window, skipping stopwords.
@@ -75,6 +101,9 @@ export function lookupExact(phrase, lexicon) {
  * several sources have an entry for the same window, the earlier source in
  * the list wins. This lets a more specific dictionary (e.g. timewords) take
  * priority over a general one (nouns) without double-counting a token.
+ *
+ * Single-word windows that don't match verbatim also try a small set of
+ * morphological variants (see morphologicalVariants()) before giving up.
  *
  * Returns { matchedTerms: [{term, ko, category, source}], unknownTerms: [term] }.
  */
@@ -90,14 +119,18 @@ export function scanTextMulti(text, sources, stopwords) {
     const maxWindow = Math.min(MAX_WINDOW_WORDS, tokens.length - i);
     for (let windowSize = maxWindow; windowSize >= 1 && !matched; windowSize -= 1) {
       const candidate = tokens.slice(i, i + windowSize).join(' ');
+      const lookupKeys = windowSize === 1 ? [candidate, ...morphologicalVariants(candidate)] : [candidate];
       for (const { name, lexicon } of sources) {
-        const entry = lexicon.entries[candidate];
-        if (entry) {
-          matchedTerms.push({ term: candidate, ko: entry.ko, category: entry.category ?? null, source: name });
-          i += windowSize;
-          matched = true;
-          break;
+        for (const key of lookupKeys) {
+          const entry = lexicon.entries[key];
+          if (entry) {
+            matchedTerms.push({ term: candidate, ko: entry.ko, category: entry.category ?? null, source: name });
+            i += windowSize;
+            matched = true;
+            break;
+          }
         }
+        if (matched) break;
       }
     }
     if (matched) continue;

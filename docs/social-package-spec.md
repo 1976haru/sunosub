@@ -305,3 +305,53 @@ S5 자체의 로직(WSSE·XML·사전 검사 5종)은 합성 fixture로 완전�
 문법 100% 일치, `seasonMoment` 전곡 동일 등)을 만족하도록 새로 작성한 것이며, 지시문에
 적힌 실측값(예: 고유 단어 160개)은 재현하지 않았다 — 정확한 값은 실행 결과를 직접
 확인하라(완료 보고 참조).
+
+TASK-S7은 반대로 실제 파일(`D:\suno\suno-current\lyrics\`의 v1/v2 세트)에 직접 접근해
+검증했다 — 코드에는 포함하지 않는다(가사가 실제 저작물이라 리포지토리에 커밋하지 않음).
+`test/fixtures/sample-setpack-v2.json`은 기존 `sample-setpack.json`을 v2 스키마 모양으로
+변형한 합성 픽스처다(`titleLocalized` 제거, `seasonMoment` 곡별 고유값, `youtube.tags`
+8개, `qualityScore`/`warnings`/`lyricThemeText` 등 v2 필드 추가) — 자동화 테스트는 이
+픽스처로 돌고, 실제 파일 검증 결과는 TASK-S7 완료 보고에 별도로 남겼다.
+
+## 14a. TASK-S7 — v2 스키마 지원
+
+2026-08-07 전후로 Suno Weaver Studio의 출력 형식이 바뀌어 `titleLocalized` 필드가
+사라졌다(원인 미확인 — 회귀인지 의도적 제거인지는 Suno Weaver Studio 쪽에서 별도로
+확인해야 한다. `git log -S "titleLocalized"` 참조). 이 저장소는 그 원인을 고치지 않고,
+없어도 파이프라인이 죽지 않도록 흡수한다:
+
+- `REQUIRED_SONG_FIELDS`에서 `titleLocalized`를 뺐다. 없으면 `title`(영어 원제)로
+  폴백하고 `titleLocalizedFallback: true`를 정규화 결과에 남긴다.
+- 출력 언어가 `ko`/`ja`일 때만(영어 채널은 폴백이 정상이므로 경고 대상이 아니다)
+  `set.warnings`에 폴백 개수를 명시한 경고를 남긴다. 세트의 절반을 넘게 폴백하면
+  `[중요]` 접두를 붙인다.
+- `seasonMoment` 승격 조건(전곡 완전 동일)은 손대지 않았다 — v1은 계속 승격하고,
+  v2(곡마다 고유값)는 승격하지 않는다. 그대로 동작했다.
+- v2 전용 필드(`lyricThemeText`, `distinctChoice`, `genreText`, `pov`, `qualityScore`,
+  `warnings`)를 정규화 결과에 실어 보낸다. `lyricThemeText`는 `listenerSituation`과
+  동일하게 명사·시간어 스캔 대상이다(같은 `coverage.nouns` 풀에 합산). 나머지는
+  원문 그대로 pass-through — 이번 작업 범위에서 문장 생성 로직(S1)에 새로 연결하지
+  않았다(`genreText`/`distinctChoice`를 실제 해시태그·쇼츠 문구에 쓰는 것은 후속 작업).
+  `song.warnings`(상류 경고)는 `[상류] (트랙 N) ...` 형태로 `set.warnings`에 합쳐진다.
+- `generate/youtubeShort.js`의 쇼츠 상위 3곡 선정은 `qualityScore`가 하나라도 있으면
+  그 값 내림차순(동점은 안정 정렬로 trackNo 순서 유지)으로, 없으면 기존
+  trackNo 순서로 동작한다(`pickTopSongs()`).
+
+### 사전 보강
+
+`data/lexicon/ko/nouns.json`(82→167개), `data/lexicon/ko/timewords.json`(13→24개),
+`data/lexicon/stopwords.en.json`(18→83개)를 실제 v1/v2 샘플의 미지어(merge 시 119개)
+기준으로 채웠다. 동사형·복수형(`rolling`/`roll`, `windows`/`window`,
+`sliding`/`slide`)은 엔트리를 따로 만들지 않고 `parse/lexicon.js`의
+`morphologicalVariants()`가 표제어 하나로 흡수한다(복수형 `-s`, `-ing`/`-ed` 어미,
+자음 중복 undo, 묵음 e 복원) — 사전에 실제로 없는 변형은 여전히 unknownTerms로
+남는다(추측 번역 없음).
+
+**부수적으로 발견해 고친 결함**: `data/lexicon/ko/timewords.json`의 `after`/`while`
+엔트리가 `category: "time"`이었다. `generate/youtubeSet.js`의 `deriveTimeKo()`는 이
+카테고리를 "아침/저녁/밤" 같은 시간대 슬롯 값으로 그대로 쓰는데, `after`/`while`의
+번역("~ 이후", "~하는 동안")은 문장 조각이라 슬롯에 단독으로 들어가면 안 된다. v1
+샘플에서는 우연히 다른 시간대 단어가 더 자주 나와 드러나지 않았지만, v2 샘플은 실제로
+유튜브 제목 후보에 "70년대 올드팝 명곡 ~ 이후 플레이리스트"가 나왔다(완료 보고 참조).
+`category: "relative"`로 재분류해 고쳤다 — 사전 항목 자체는 그대로 유지되므로
+coverage.nouns나 다른 매칭에는 영향이 없다.

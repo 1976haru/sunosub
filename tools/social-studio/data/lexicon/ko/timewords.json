@@ -3,14 +3,22 @@
   "entries": {
     "after": {
       "ko": "~ 이후",
-      "category": "time"
+      "category": "relative"
     },
     "afternoon": {
       "ko": "오후",
       "category": "time"
     },
+    "autumn": {
+      "ko": "가을",
+      "category": "season"
+    },
     "day": {
       "ko": "하루",
+      "category": "time"
+    },
+    "dusk": {
+      "ko": "해질녘",
       "category": "time"
     },
     "evening": {
@@ -25,9 +33,17 @@
       "ko": "동틀 무렵",
       "category": "time"
     },
+    "friday": {
+      "ko": "금요일",
+      "category": "weekday"
+    },
     "frost": {
       "ko": "서리",
       "category": "season"
+    },
+    "hour": {
+      "ko": "한 시간",
+      "category": "duration"
     },
     "late summer opening": {
       "ko": "늦여름의 시작",
@@ -41,17 +57,45 @@
       "ko": "밤",
       "category": "time"
     },
+    "saturday": {
+      "ko": "토요일",
+      "category": "weekday"
+    },
+    "september": {
+      "ko": "구월",
+      "category": "month"
+    },
+    "spring": {
+      "ko": "봄",
+      "category": "season"
+    },
     "summer": {
       "ko": "여름",
       "category": "season"
     },
+    "sunset": {
+      "ko": "노을",
+      "category": "time"
+    },
+    "today": {
+      "ko": "오늘",
+      "category": "duration"
+    },
+    "week": {
+      "ko": "일주일",
+      "category": "duration"
+    },
     "while": {
       "ko": "~하는 동안",
-      "category": "time"
+      "category": "relative"
     },
     "winter": {
       "ko": "겨울",
       "category": "season"
+    },
+    "year": {
+      "ko": "한 해",
+      "category": "duration"
     }
   }
 }

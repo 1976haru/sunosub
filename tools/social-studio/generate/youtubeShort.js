@@ -45,9 +45,25 @@ function buildOneShort(song, templates, setSlots, setName, hashtagPool) {
 }
 
 /**
+ * Picks the "top" songs for scope:'top3'. TASK-S7: Suno Weaver Studio's v2
+ * export adds a per-song qualityScore — when at least one song in the set
+ * carries one, it becomes the ranking key (stable sort, so ties keep trackNo
+ * order — this is why the all-zero real sample still slices identically to
+ * the old behavior). v1 sets have no qualityScore at all, so this falls back
+ * to the original "상위 = trackNo 오름차순" rule untouched.
+ */
+export function pickTopSongs(songs, count) {
+  const hasScores = songs.some((s) => typeof s.qualityScore === 'number');
+  if (!hasScores) return songs.slice(0, count);
+  return [...songs]
+    .sort((a, b) => (b.qualityScore ?? -Infinity) - (a.qualityScore ?? -Infinity))
+    .slice(0, count);
+}
+
+/**
  * @param {'top3'|'all'} scope - default 'top3' (spec 3②: "기본은 상위 3곡").
  *   "상위"는 trackNo 오름차순 — 별도 인기도/순위 데이터가 없으므로 세트
- *   순서를 그대로 신뢰한다.
+ *   순서를 그대로 신뢰한다. qualityScore가 있으면 그 값을 우선한다(위 참조).
  */
 export function generateYoutubeShorts(normalized, { channelId, hashtagPool, scope = 'top3' } = {}) {
   const setName = normalized.set.setName;
@@ -58,7 +74,7 @@ export function generateYoutubeShorts(normalized, { channelId, hashtagPool, scop
     seasonKo: normalized.set.seasonHint?.ko ?? '',
   };
 
-  const songs = scope === 'all' ? normalized.songs : normalized.songs.slice(0, 3);
+  const songs = scope === 'all' ? normalized.songs : pickTopSongs(normalized.songs, 3);
   const shorts = songs.map((song) => buildOneShort(song, templates, setSlots, setName, hashtagPool));
   const warnings = shorts.map((s) => s.warning).filter(Boolean);
 

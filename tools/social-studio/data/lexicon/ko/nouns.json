@@ -17,6 +17,22 @@
       "ko": "홀로",
       "category": "description"
     },
+    "arrive": {
+      "ko": "도착하다",
+      "category": "action"
+    },
+    "band": {
+      "ko": "밴드",
+      "category": "object"
+    },
+    "begin": {
+      "ko": "시작하다",
+      "category": "action"
+    },
+    "blow": {
+      "ko": "불다",
+      "category": "action"
+    },
     "boardwalk": {
       "ko": "해변 산책로",
       "category": "place"
@@ -25,12 +41,48 @@
       "ko": "부스 자리",
       "category": "place"
     },
+    "breakfast": {
+      "ko": "아침 식사",
+      "category": "object"
+    },
+    "breathe": {
+      "ko": "숨쉬다",
+      "category": "action"
+    },
+    "bring": {
+      "ko": "가져오다",
+      "category": "action"
+    },
     "car": {
       "ko": "자동차",
       "category": "object"
     },
+    "city": {
+      "ko": "도시",
+      "category": "place"
+    },
     "coffee": {
       "ko": "커피",
+      "category": "object"
+    },
+    "cold": {
+      "ko": "차가운",
+      "category": "description"
+    },
+    "color": {
+      "ko": "색깔",
+      "category": "object"
+    },
+    "conversation": {
+      "ko": "대화",
+      "category": "object"
+    },
+    "corner": {
+      "ko": "모퉁이",
+      "category": "place"
+    },
+    "courage": {
+      "ko": "용기",
       "category": "object"
     },
     "cross": {
@@ -41,6 +93,10 @@
       "ko": "붐비는",
       "category": "description"
     },
+    "curl": {
+      "ko": "피어오르다",
+      "category": "action"
+    },
     "dance": {
       "ko": "춤",
       "category": "action"
@@ -49,9 +105,21 @@
       "ko": "춤추는",
       "category": "action"
     },
+    "dashboard": {
+      "ko": "계기판",
+      "category": "object"
+    },
     "diner": {
       "ko": "간이식당",
       "category": "place"
+    },
+    "dinner": {
+      "ko": "저녁 식사",
+      "category": "object"
+    },
+    "dishes": {
+      "ko": "그릇들",
+      "category": "object"
     },
     "door": {
       "ko": "문",
@@ -69,6 +137,10 @@
       "ko": "시내",
       "category": "place"
     },
+    "drift": {
+      "ko": "떠돌다",
+      "category": "action"
+    },
     "driving": {
       "ko": "운전하는",
       "category": "action"
@@ -81,17 +153,49 @@
       "ko": "모든",
       "category": "quantity"
     },
+    "familiar": {
+      "ko": "익숙한",
+      "category": "description"
+    },
+    "family": {
+      "ko": "가족",
+      "category": "person"
+    },
+    "favorite": {
+      "ko": "가장 좋아하는",
+      "category": "description"
+    },
     "find": {
       "ko": "발견하다",
+      "category": "action"
+    },
+    "fixed": {
+      "ko": "고정된",
+      "category": "description"
+    },
+    "floor": {
+      "ko": "바닥",
+      "category": "object"
+    },
+    "fold": {
+      "ko": "접다",
       "category": "action"
     },
     "friend": {
       "ko": "친구",
       "category": "person"
     },
+    "funnier": {
+      "ko": "더 재미있는",
+      "category": "description"
+    },
     "go": {
       "ko": "가다",
       "category": "action"
+    },
+    "hair": {
+      "ko": "머리카락",
+      "category": "object"
     },
     "half": {
       "ko": "반쯤",
@@ -105,13 +209,41 @@
       "ko": "손",
       "category": "object"
     },
+    "happen": {
+      "ko": "일어나다",
+      "category": "action"
+    },
     "heat": {
       "ko": "더위",
       "category": "object"
     },
+    "highway": {
+      "ko": "고속도로",
+      "category": "place"
+    },
+    "hold": {
+      "ko": "붙잡다",
+      "category": "action"
+    },
     "holding": {
       "ko": "잡고 있는",
       "category": "action"
+    },
+    "hope": {
+      "ko": "바라다",
+      "category": "action"
+    },
+    "house": {
+      "ko": "집",
+      "category": "place"
+    },
+    "hum": {
+      "ko": "흥얼거리다",
+      "category": "action"
+    },
+    "humid": {
+      "ko": "후텁지근한",
+      "category": "description"
     },
     "kettle": {
       "ko": "주전자",
@@ -120,6 +252,10 @@
     "kitchen": {
       "ko": "부엌",
       "category": "place"
+    },
+    "knee": {
+      "ko": "무릎",
+      "category": "object"
     },
     "left": {
       "ko": "남겨진",
@@ -145,13 +281,49 @@
       "ko": "불이 켜진",
       "category": "description"
     },
+    "lose": {
+      "ko": "잃다",
+      "category": "action"
+    },
+    "lounge": {
+      "ko": "라운지",
+      "category": "place"
+    },
     "low": {
       "ko": "낮은",
       "category": "description"
     },
+    "mail": {
+      "ko": "편지",
+      "category": "object"
+    },
+    "mailbox": {
+      "ko": "우편함",
+      "category": "object"
+    },
+    "map": {
+      "ko": "지도",
+      "category": "object"
+    },
+    "mix": {
+      "ko": "뒤섞이다",
+      "category": "action"
+    },
+    "moment": {
+      "ko": "순간",
+      "category": "object"
+    },
+    "move": {
+      "ko": "움직이다",
+      "category": "action"
+    },
     "music": {
       "ko": "음악",
       "category": "object"
+    },
+    "narrow": {
+      "ko": "좁아지다",
+      "category": "action"
     },
     "neighborhood": {
       "ko": "동네",
@@ -161,9 +333,17 @@
       "ko": "네온",
       "category": "object"
     },
+    "nerve": {
+      "ko": "긴장감",
+      "category": "object"
+    },
     "no": {
       "ko": "없는",
       "category": "description"
+    },
+    "number": {
+      "ko": "숫자",
+      "category": "quantity"
     },
     "old": {
       "ko": "오래된",
@@ -183,6 +363,18 @@
     },
     "opens": {
       "ko": "열리다",
+      "category": "action"
+    },
+    "outside": {
+      "ko": "바깥",
+      "category": "place"
+    },
+    "pack": {
+      "ko": "챙기다",
+      "category": "action"
+    },
+    "pass": {
+      "ko": "지나가다",
       "category": "action"
     },
     "past": {
@@ -225,9 +417,45 @@
       "ko": "포치의 식탁",
       "category": "object"
     },
+    "press": {
+      "ko": "누르다",
+      "category": "action"
+    },
+    "promise": {
+      "ko": "약속하다",
+      "category": "action"
+    },
+    "pull": {
+      "ko": "당기다",
+      "category": "action"
+    },
+    "quiet": {
+      "ko": "조용한",
+      "category": "description"
+    },
+    "radio": {
+      "ko": "라디오",
+      "category": "object"
+    },
+    "raise": {
+      "ko": "들어올리다",
+      "category": "action"
+    },
+    "read": {
+      "ko": "읽다",
+      "category": "action"
+    },
     "record": {
       "ko": "레코드",
       "category": "object"
+    },
+    "remember": {
+      "ko": "기억하다",
+      "category": "action"
+    },
+    "rest": {
+      "ko": "쉬다",
+      "category": "action"
     },
     "rise": {
       "ko": "피어오르다",
@@ -236,6 +464,10 @@
     "road": {
       "ko": "길",
       "category": "place"
+    },
+    "roll": {
+      "ko": "구르다",
+      "category": "action"
     },
     "rooftop": {
       "ko": "옥상",
@@ -253,6 +485,26 @@
       "ko": "같은",
       "category": "description"
     },
+    "seal": {
+      "ko": "봉하다",
+      "category": "action"
+    },
+    "shake": {
+      "ko": "흔들리다",
+      "category": "action"
+    },
+    "shirt": {
+      "ko": "셔츠",
+      "category": "object"
+    },
+    "shoulder": {
+      "ko": "어깨",
+      "category": "object"
+    },
+    "shy": {
+      "ko": "수줍은",
+      "category": "description"
+    },
     "sign": {
       "ko": "간판",
       "category": "object"
@@ -260,6 +512,10 @@
     "signs": {
       "ko": "간판들",
       "category": "object"
+    },
+    "single": {
+      "ko": "단 하나의",
+      "category": "quantity"
     },
     "sings": {
       "ko": "노래하다",
@@ -269,9 +525,29 @@
       "ko": "앉아 있는",
       "category": "action"
     },
+    "slide": {
+      "ko": "미끄러지다",
+      "category": "action"
+    },
+    "slow": {
+      "ko": "느린",
+      "category": "description"
+    },
+    "social": {
+      "ko": "사교적인",
+      "category": "description"
+    },
     "song": {
       "ko": "노래",
       "category": "object"
+    },
+    "spin": {
+      "ko": "빙그르르 돌다",
+      "category": "action"
+    },
+    "spot": {
+      "ko": "알아차리다",
+      "category": "action"
     },
     "standing": {
       "ko": "서 있는",
@@ -281,12 +557,56 @@
       "ko": "김",
       "category": "object"
     },
+    "step": {
+      "ko": "걸음",
+      "category": "object"
+    },
+    "stop": {
+      "ko": "멈추다",
+      "category": "action"
+    },
+    "stories": {
+      "ko": "이야기들",
+      "category": "object"
+    },
+    "street": {
+      "ko": "거리",
+      "category": "place"
+    },
+    "stretch": {
+      "ko": "기지개 켜다",
+      "category": "action"
+    },
+    "suitcase": {
+      "ko": "여행 가방",
+      "category": "object"
+    },
+    "sweetheart": {
+      "ko": "연인",
+      "category": "person"
+    },
     "swing": {
       "ko": "그네",
       "category": "object"
     },
+    "switch": {
+      "ko": "스위치",
+      "category": "object"
+    },
     "table": {
       "ko": "식탁",
+      "category": "object"
+    },
+    "three": {
+      "ko": "셋",
+      "category": "quantity"
+    },
+    "throw": {
+      "ko": "던지다",
+      "category": "action"
+    },
+    "time": {
+      "ko": "시간",
       "category": "object"
     },
     "town": {
@@ -297,9 +617,25 @@
       "ko": "선로",
       "category": "place"
     },
+    "traffic": {
+      "ko": "차량들",
+      "category": "object"
+    },
     "train": {
       "ko": "기차",
       "category": "object"
+    },
+    "truck": {
+      "ko": "트럭",
+      "category": "object"
+    },
+    "turn": {
+      "ko": "돌다",
+      "category": "action"
+    },
+    "unfamiliar": {
+      "ko": "낯선",
+      "category": "description"
     },
     "walking": {
       "ko": "걷는",
@@ -312,6 +648,10 @@
     "watching": {
       "ko": "바라보는",
       "category": "action"
+    },
+    "whistle": {
+      "ko": "휘파람 소리",
+      "category": "object"
     },
     "whole": {
       "ko": "온",

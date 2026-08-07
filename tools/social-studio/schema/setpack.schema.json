@@ -29,11 +29,15 @@
   "$defs": {
     "song": {
       "type": "object",
-      "required": ["trackNo", "title", "titleLocalized", "listenerSituation", "emotionArc", "hookPhrase", "lyrics"],
+      "required": ["trackNo", "title", "listenerSituation", "emotionArc", "hookPhrase", "lyrics"],
       "properties": {
         "trackNo": { "type": "integer", "minimum": 1 },
         "title": { "type": "string", "minLength": 1 },
-        "titleLocalized": { "type": "string", "minLength": 1 },
+        "titleLocalized": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional as of Suno Weaver Studio's v2 export (TASK-S7). Missing on v2 sets — parse/setPackLoader.js falls back to `title` and records titleLocalizedFallback:true on the normalized song."
+        },
         "seasonMoment": { "type": "string" },
         "listenerSituation": { "type": "string", "minLength": 1 },
         "emotionArc": { "type": "string", "minLength": 1 },
@@ -48,7 +52,20 @@
             "description": { "type": "string" },
             "tags": { "type": "array", "items": { "type": "string" } }
           }
-        }
+        },
+        "distinctChoice": { "type": "string", "description": "v2-only. What makes this song distinct — a shorts-caption candidate." },
+        "genreId": { "type": "string", "description": "v2-only." },
+        "genreText": { "type": "string", "description": "v2-only. Genre description, prose form." },
+        "lyricTheme": { "type": "string", "description": "v2-only." },
+        "lyricThemeText": { "type": "string", "description": "v2-only. Free-text scene description, scanned for noun coverage same as listenerSituation." },
+        "lyricThemeArc": { "type": "string", "description": "v2-only." },
+        "pov": { "type": "string", "description": "v2-only. Point of view (e.g. firstPerson/secondPerson)." },
+        "verseStyle": { "type": "string", "description": "v2-only." },
+        "verseStyleText": { "type": "string", "description": "v2-only." },
+        "chorusStyle": { "type": "string", "description": "v2-only." },
+        "chorusStyleText": { "type": "string", "description": "v2-only." },
+        "qualityScore": { "type": "number", "description": "v2-only. Used to rank shorts top-3 selection when present." },
+        "warnings": { "type": "array", "items": { "type": "string" }, "description": "v2-only. Upstream (Suno Weaver Studio) warnings, merged into normalized.set.warnings with a [상류] prefix." }
       }
     }
   }

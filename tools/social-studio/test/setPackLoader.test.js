@@ -14,6 +14,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'sample-setpack.json');
+const FIXTURE_V2_PATH = path.join(__dirname, 'fixtures', 'sample-setpack-v2.json');
 const NOUNS_PATH = path.join(__dirname, '..', 'data', 'lexicon', 'ko', 'nouns.json');
 
 function baseValidSong(overrides = {}) {
@@ -81,9 +82,9 @@ test('condition 3c: duplicate trackNo throws', () => {
   assert.throws(() => validateSetPack(data), SetPackValidationError);
 });
 
-test('condition 3d: missing titleLocalized throws', () => {
+test('condition 3d: missing title (not titleLocalized) throws', () => {
   const data = baseValidSetPack();
-  delete data.songs[0].titleLocalized;
+  delete data.songs[0].title;
   assert.throws(() => validateSetPack(data), SetPackValidationError);
 });
 
@@ -202,4 +203,144 @@ test('runSetPackPipeline writes normalized.json and unknown-terms.json under out
   assert.ok(fs.existsSync(path.join(outDir, 'unknown-terms.json')));
   const report = JSON.parse(fs.readFileSync(path.join(outDir, 'unknown-terms.json'), 'utf8'));
   assert.equal(report.setName, '20260804_굿모닝추억라디오_70년대감성');
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S7 — v2 schema support (titleLocalized optional, seasonMoment per-song,
+// new v2 fields, lexicon coverage). See docs/social-package-spec.md §14a.
+// ---------------------------------------------------------------------------
+
+test('S7 condition 1: the v2 fixture (no titleLocalized, 18 unique seasonMoment) normalizes all 18 songs without throwing', () => {
+  const data = readSetPackFile(FIXTURE_V2_PATH);
+  const { warnings } = validateSetPack(data);
+  const { normalized } = normalizeSetPack(data, warnings);
+  assert.equal(normalized.songs.length, 18);
+});
+
+test('S7 condition 3: v2 fallback — every song has no titleLocalized, titleLocalized falls back to title, and set.warnings carries a [중요]-prefixed fallback warning (18/18 > half)', () => {
+  const data = readSetPackFile(FIXTURE_V2_PATH);
+  const { warnings } = validateSetPack(data);
+  const { normalized } = normalizeSetPack(data, warnings);
+  for (const song of normalized.songs) {
+    assert.equal(song.titleLocalizedFallback, true);
+    assert.equal(song.titleLocalized, song.title);
+  }
+  const fallbackWarning = normalized.set.warnings.find((w) => w.includes('titleLocalized 누락'));
+  assert.ok(fallbackWarning, `expected a titleLocalized fallback warning, got: ${JSON.stringify(normalized.set.warnings)}`);
+  assert.ok(fallbackWarning.startsWith('[중요]'), `expected [중요] prefix since 18/18 > half, got: "${fallbackWarning}"`);
+  assert.ok(fallbackWarning.includes('18곡 중 18곡'));
+});
+
+test('S7 condition 4: v1 fixture (titleLocalized present) never falls back and never warns about it', () => {
+  const data = readSetPackFile(FIXTURE_PATH);
+  const { warnings } = validateSetPack(data);
+  const { normalized } = normalizeSetPack(data, warnings);
+  assert.ok(normalized.songs.every((s) => s.titleLocalizedFallback === false));
+  assert.ok(!normalized.set.warnings.some((w) => w.includes('titleLocalized')));
+});
+
+test('S7: a minority fallback (below half the set) omits the [중요] prefix', () => {
+  const data = baseValidSetPack([{}, { trackNo: 2 }, { trackNo: 3 }, { trackNo: 4 }]);
+  delete data.songs[0].titleLocalized; // 1 of 4 — below half
+  const { normalized } = normalizeSetPack(data, []);
+  const w = normalized.set.warnings.find((x) => x.includes('titleLocalized 누락'));
+  assert.ok(w);
+  assert.ok(!w.startsWith('[중요]'), `expected no [중요] prefix for a minority fallback, got: "${w}"`);
+  assert.ok(w.includes('4곡 중 1곡'));
+});
+
+test('S7 condition 5: v2 fixture (18 distinct seasonMoment values) does not promote to set.seasonHint', () => {
+  const data = readSetPackFile(FIXTURE_V2_PATH);
+  const { warnings } = validateSetPack(data);
+  const { normalized } = normalizeSetPack(data, warnings);
+  assert.equal(normalized.set.seasonHint, null);
+  assert.ok(!normalized.set.warnings.some((w) => w.includes('세트 레벨로 승격')));
+  assert.equal(normalized.songs[0].seasonMoment, data.songs[0].seasonMoment);
+});
+
+test('S7 condition 6: v1 fixture (identical seasonMoment) still promotes — existing behavior unchanged', () => {
+  const data = readSetPackFile(FIXTURE_PATH);
+  const { warnings } = validateSetPack(data);
+  const { normalized } = normalizeSetPack(data, warnings);
+  assert.ok(normalized.set.seasonHint);
+  assert.equal(normalized.set.seasonHint.promoted, true);
+});
+
+test('S7: lyricThemeText (v2-only) is scanned for nouns/timewords the same way listenerSituation is', () => {
+  const data = baseValidSetPack([{ lyricThemeText: 'a warm porch swing at dusk' }]);
+  const { normalized, report } = normalizeSetPack(data, []);
+  assert.ok(normalized.songs[0].lyricThemeText, 'expected a non-null lyricThemeText block');
+  assert.equal(normalized.songs[0].lyricThemeText.raw, 'a warm porch swing at dusk');
+  const matchedKo = normalized.songs[0].lyricThemeText.matchedTerms.map((m) => m.ko);
+  assert.ok(matchedKo.length > 0, 'expected at least one dictionary match inside lyricThemeText');
+  // report.coverage.nouns should reflect lyricThemeText matches too, not just listenerSituation.
+  assert.equal(report.coverage.nouns, 1);
+});
+
+test('S7: v1-style song with no lyricThemeText field normalizes with lyricThemeText: null (no crash on the optional field)', () => {
+  const data = baseValidSetPack();
+  const { normalized } = normalizeSetPack(data, []);
+  assert.equal(normalized.songs[0].lyricThemeText, null);
+});
+
+test('S7 condition 11: upstream song.warnings (v2-only) are merged into set.warnings with a [상류] prefix', () => {
+  const data = baseValidSetPack([{ warnings: ['가사 길이 초과'] }]);
+  const { normalized } = normalizeSetPack(data, []);
+  const merged = normalized.set.warnings.find((w) => w.includes('가사 길이 초과'));
+  assert.ok(merged, `expected an upstream warning to be merged, got: ${JSON.stringify(normalized.set.warnings)}`);
+  assert.ok(merged.startsWith('[상류]'), `expected a [상류] prefix, got: "${merged}"`);
+  assert.ok(merged.includes('트랙 1'));
+});
+
+test('S7: a v1 song with no warnings field merges nothing (no crash on the optional field)', () => {
+  const data = baseValidSetPack();
+  const { normalized } = normalizeSetPack(data, []);
+  assert.ok(!normalized.set.warnings.some((w) => w.startsWith('[상류]')));
+});
+
+test('S7 condition 9: youtube.tags count is preserved exactly (5 in v1, 8 in v2) — nothing assumes a fixed count', () => {
+  const v1 = readSetPackFile(FIXTURE_PATH);
+  const { normalized: n1 } = normalizeSetPack(v1, []);
+  assert.equal(n1.songs[0].youtube.tags.length, 5);
+
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized: n2 } = normalizeSetPack(v2, []);
+  assert.equal(n2.songs[0].youtube.tags.length, 8);
+});
+
+test('S7 condition 7+8: coverage.nouns is >= 0.90 on both v1 and v2 fixtures, and collapses toward 0 when nouns.json is emptied', () => {
+  const backup = fs.readFileSync(NOUNS_PATH, 'utf8');
+  try {
+    const v1 = readSetPackFile(FIXTURE_PATH);
+    const { report: r1 } = normalizeSetPack(v1, []);
+    assert.ok(r1.coverage.nouns >= 0.9, `v1 coverage.nouns ${r1.coverage.nouns} should be >= 0.90`);
+
+    const v2 = readSetPackFile(FIXTURE_V2_PATH);
+    const { report: r2 } = normalizeSetPack(v2, []);
+    assert.ok(r2.coverage.nouns >= 0.9, `v2 coverage.nouns ${r2.coverage.nouns} should be >= 0.90`);
+
+    fs.writeFileSync(NOUNS_PATH, JSON.stringify({ version: 1, entries: {} }));
+    const { report: emptied1 } = normalizeSetPack(readSetPackFile(FIXTURE_PATH), []);
+    const { report: emptied2 } = normalizeSetPack(readSetPackFile(FIXTURE_V2_PATH), []);
+    assert.equal(emptied1.coverage.nouns, 0);
+    assert.equal(emptied2.coverage.nouns, 0);
+  } finally {
+    fs.writeFileSync(NOUNS_PATH, backup);
+  }
+});
+
+test('S7: v2-only fields (distinctChoice, genreText, pov, qualityScore) pass through on the normalized song when present, null on v1', () => {
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized: n2 } = normalizeSetPack(v2, []);
+  assert.equal(typeof n2.songs[0].distinctChoice, 'string');
+  assert.equal(typeof n2.songs[0].genreText, 'string');
+  assert.equal(typeof n2.songs[0].pov, 'string');
+  assert.equal(typeof n2.songs[0].qualityScore, 'number');
+
+  const v1 = readSetPackFile(FIXTURE_PATH);
+  const { normalized: n1 } = normalizeSetPack(v1, []);
+  assert.equal(n1.songs[0].distinctChoice, null);
+  assert.equal(n1.songs[0].genreText, null);
+  assert.equal(n1.songs[0].pov, null);
+  assert.equal(n1.songs[0].qualityScore, null);
 });

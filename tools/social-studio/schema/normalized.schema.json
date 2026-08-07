@@ -51,7 +51,14 @@
         "properties": {
           "trackNo": { "type": "integer" },
           "title": { "type": "string" },
-          "titleLocalized": { "type": "string" },
+          "titleLocalized": {
+            "type": "string",
+            "description": "Always present: either the real localized title, or (TASK-S7) `title` used as a fallback when the input omitted it — see titleLocalizedFallback."
+          },
+          "titleLocalizedFallback": {
+            "type": "boolean",
+            "description": "TASK-S7. True when titleLocalized above is actually `title` copied over because the input had no titleLocalized. When true and outputLanguage is ko/ja, set.warnings carries a matching entry (see spec §14a)."
+          },
           "seasonMoment": {
             "type": ["string", "null"],
             "description": "Present only when this song's seasonMoment differs from the set-wide value (which is promoted to set.seasonHint instead)."
@@ -64,6 +71,19 @@
               "unknownTerms": { "type": "array", "items": { "type": "string" } }
             }
           },
+          "lyricThemeText": {
+            "type": ["object", "null"],
+            "description": "TASK-S7, v2-only. Same shape as listenerSituation — scanned for noun/timeword coverage the same way. null on v1 sets.",
+            "properties": {
+              "raw": { "type": "string" },
+              "matchedTerms": { "type": "array", "items": { "type": "object" } },
+              "unknownTerms": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "distinctChoice": { "type": ["string", "null"], "description": "TASK-S7, v2-only pass-through." },
+          "genreText": { "type": ["string", "null"], "description": "TASK-S7, v2-only pass-through." },
+          "pov": { "type": ["string", "null"], "description": "TASK-S7, v2-only pass-through." },
+          "qualityScore": { "type": ["number", "null"], "description": "TASK-S7, v2-only. Drives shorts top-3 selection when present (generate/youtubeShort.js)." },
           "emotionArc": {
             "type": "object",
             "properties": {
