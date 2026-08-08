@@ -11,6 +11,7 @@ import storyRouter from './routes/story.js';
 import timelineRouter from './routes/timeline.js';
 import thumbnailRouter from './routes/thumbnail.js';
 import socialStudioPackRouter from './tools/social-studio/server/packRoutes.js'; // TASK-S2
+import socialStudioHomeRouter from './tools/social-studio/server/homeRoutes.js'; // TASK-S7
 
 loadKeyIntoEnv();
 
@@ -55,6 +56,7 @@ app.use('/api/shorts', shortsRouter);
 app.use('/api/story', storyRouter);
 app.use('/api/timeline', timelineRouter);
 app.use('/api/thumbnail', thumbnailRouter);
+app.use('/social-studio', socialStudioHomeRouter); // TASK-S7
 app.use('/social-studio', socialStudioPackRouter); // TASK-S2
 
 app.use((error, _req, res, _next) => {
