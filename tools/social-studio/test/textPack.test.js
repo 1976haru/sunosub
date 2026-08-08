@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { runSetPackPipeline } from '../parse/setPackLoader.js';
-import { generateTextPack, renderMarkdown, runTextPackPipeline } from '../generate/textPack.js';
+import { generateTextPack, renderMarkdown, runTextPackPipeline, checkCaptionCommentDiffer, buildRegenerateFn } from '../generate/textPack.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'sample-setpack.json');
@@ -158,12 +158,28 @@ test('condition 7c: a timeline that breaks the >=10s-gap rule is rejected — no
 
 // --- condition 8: lyricQuote is a genuine substring of that song's lyrics ---
 
-test('condition 8: x.lyricQuote is an exact substring of the corresponding song\'s lyrics', () => {
+test('condition 8: x.lyricQuote is an exact substring of the corresponding song\'s lyrics (lyricLanguage matches outputLanguage)', () => {
   const normalized = loadNormalized();
+  // TASK-S8 작업 G: 출력 언어(ko)와 가사 언어가 다르면 인용을 생략한다 — 이
+  // 조건 자체를 테스트하려면 두 언어를 일치시켜야 한다(샘플 픽스처는
+  // lyricLanguage: 'english'). "S8: 언어 불일치 시 생략" 테스트가 그 반대
+  // 경로(불일치 -> 생략)를 다룬다.
+  normalized.set = { ...normalized.set, lyricLanguage: 'korean' };
   const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
   assert.ok(textpack.x.lyricQuote, 'expected a lyric quote to be produced');
   const matchingSong = normalized.songs.find((s) => s.lyrics.includes(textpack.x.lyricQuote));
   assert.ok(matchingSong, `lyricQuote "${textpack.x.lyricQuote}" was not found verbatim in any song's lyrics`);
+});
+
+// --- TASK-S8 작업 G: outputLanguage와 lyricLanguage가 다르면 lyricQuote를 생략한다 ---
+
+test('S8: a ko-output channel with English lyrics skips lyricQuote and warns instead of quoting untranslated English', () => {
+  const normalized = loadNormalized(); // good-morning-memory-radio -> outputLanguage 'ko', fixture lyricLanguage 'english'
+  assert.equal(normalized.set.outputLanguage, 'ko');
+  assert.equal(normalized.set.lyricLanguage, 'english');
+  const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
+  assert.equal(textpack.x.lyricQuote, null);
+  assert.ok(textpack.warnings.some((w) => w.includes('가사가 영어이므로 인용을 생략했습니다')), `expected the skip warning, got: ${JSON.stringify(textpack.warnings)}`);
 });
 
 test('condition 8b: a fabricated lyric quote is rejected by the guard and blanked with an error', () => {
@@ -221,6 +237,68 @@ test('leak guard: an English word not in any song title triggers an error and bl
   // public behavior is indirect; instead verify no such leak occurs in a real run (regression guard).
   const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
   assert.equal(textpack.errors.length, 0, `unexpected hallucination-guard errors: ${JSON.stringify(textpack.errors)}`);
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S8 작업 D — 인스타 caption과 firstComment가 같으면 error
+// ---------------------------------------------------------------------------
+
+test('S8 condition 7: checkCaptionCommentDiffer errors when caption and firstComment are identical', () => {
+  const errors = checkCaptionCommentDiffer({ caption: '같은 문자열', firstComment: '같은 문자열' });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /instagram\.caption.*instagram\.firstComment/);
+});
+
+test('S8: checkCaptionCommentDiffer is silent for the normal case (caption is prose, firstComment is hashtags)', () => {
+  assert.deepEqual(checkCaptionCommentDiffer({ caption: '오늘의 플레이리스트입니다.', firstComment: '#태그1 #태그2' }), []);
+});
+
+test('S8: checkCaptionCommentDiffer is silent when either side is null/empty (nothing to compare)', () => {
+  assert.deepEqual(checkCaptionCommentDiffer({ caption: null, firstComment: '#태그1' }), []);
+  assert.deepEqual(checkCaptionCommentDiffer({ caption: '본문', firstComment: '' }), []);
+});
+
+test('S8: a real full-set run never trips the caption/firstComment guard (regression — caption and firstComment come from unrelated sources)', () => {
+  const normalized = loadNormalized();
+  const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
+  assert.notEqual(textpack.instagram.caption, textpack.instagram.firstComment);
+  assert.ok(!textpack.errors.some((e) => e.includes('caption과 instagram.firstComment')));
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S8 작업 E — 최소 길이 (실제 sample 픽스처 기준)
+// ---------------------------------------------------------------------------
+
+test('S8 condition 8+9: a real run clears instagram.captionMin/x.postMin/facebook.postMin on the sample fixture', () => {
+  const normalized = loadNormalized();
+  const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
+  assert.ok(textpack.instagram.caption.length >= 250, `instagram caption too short: ${textpack.instagram.caption.length}`);
+  assert.ok(textpack.facebook.body.length >= 150, `facebook body too short: ${textpack.facebook.body.length}`);
+  const effectiveXLen = textpack.x.main.length - YOUTUBE_URL.length + 23;
+  assert.ok(effectiveXLen >= 90, `X main too short (effective): ${effectiveXLen}`);
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S8 작업 B — R8 regeneration mechanism (buildRegenerateFn)
+// ---------------------------------------------------------------------------
+
+test('S8: buildRegenerateFn excludes the current sceneNoun1-3 and produces DIFFERENT scene-noun usage on reroll', () => {
+  const normalized = loadNormalized();
+  const original = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
+  const regenerate = buildRegenerateFn(normalized, { youtubeUrl: YOUTUBE_URL });
+
+  const updated = regenerate(original, ['naver.bodyHtml', 'facebook.body', 'x.main', 'x.thread']);
+  assert.ok(updated, 'expected a regenerated textpack, not null');
+  // The regenerated fields must differ from the original (different sceneNoun candidates).
+  assert.notEqual(updated.facebook.body, original.facebook.body);
+  assert.notEqual(updated.naver.bodyHtml, original.naver.bodyHtml);
+});
+
+test('S8: buildRegenerateFn returns null (stop retrying) when none of the flagged paths are platforms it knows how to regenerate', () => {
+  const normalized = loadNormalized();
+  const regenerate = buildRegenerateFn(normalized, { youtubeUrl: YOUTUBE_URL });
+  const result = regenerate({}, ['youtube.pinnedComment', 'shorts.1.titleKo']);
+  assert.equal(result, null);
 });
 
 // --- output files ---

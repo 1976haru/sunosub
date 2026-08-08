@@ -2,7 +2,7 @@
   "version": 1,
   "channelId": "good-morning-memory-radio",
   "platform": "x",
-  "_comment": "role:main is the URL-bearing post (URL counted as platformLimits.x.urlLength=23 chars regardless of real length); role:thread are short follow-ups with no URL slot.",
+  "_comment": "role:main is the URL-bearing post (URL counted as platformLimits.x.urlLength=23 chars regardless of real length); role:thread are short follow-ups with no URL slot. x-m-011~013 are TASK-S8's longer variants for platformLimits.x.postMin (90자, URL-adjusted) — the older short ones stay in rotation as-is.",
   "templates": [
     { "id": "x-m-001", "role": "main", "text": "{seasonKo} {timeKo}, {conceptLabel} {trackCount}곡 올렸습니다. {youtubeUrl}" },
     { "id": "x-m-002", "role": "main", "text": "{emotionToKo}(이/가) 필요한 {timeKo}에 듣기 좋은 {trackCount}곡. {youtubeUrl}" },
@@ -19,6 +19,9 @@
     { "id": "x-t-003", "role": "thread", "text": "{seasonKo} {timeKo}에 특히 잘 어울리는 곡들입니다." },
     { "id": "x-t-004", "role": "thread", "text": "댓글로 오늘 가장 마음에 남은 곡을 알려주세요." },
     { "id": "x-t-005", "role": "thread", "text": "{channelLabel}(은/는) 매주 새로운 {conceptLabel} 플레이리스트로 찾아옵니다." },
-    { "id": "x-t-006", "role": "thread", "text": "{sceneNoun3}(이/가) 떠오르는 분이라면 오늘 이 곡들이 반가우실 거예요." }
+    { "id": "x-t-006", "role": "thread", "text": "{sceneNoun3}(이/가) 떠오르는 분이라면 오늘 이 곡들이 반가우실 거예요." },
+    { "id": "x-m-011", "role": "main", "text": "{seasonKo} {timeKo}, {sceneNoun1}(과/와) {sceneNoun2}, {sceneNoun3}(이/가) 떠오르는 {conceptLabel} {trackCount}곡을 준비했습니다. {timeKo}에 편하게 들어보세요. {youtubeUrl}" },
+    { "id": "x-m-012", "role": "main", "text": "{channelLabel}에서 {emotionFromKo}에서 {emotionToKo}(으로/로) 흘러가는 {conceptLabel} {trackCount}곡을 새로 올렸습니다. {sceneNoun1}(이/가) 떠오르는 곡부터 들어보세요. {youtubeUrl}" },
+    { "id": "x-m-013", "role": "main", "text": "오늘은 {sceneNoun1}, {sceneNoun2}, {sceneNoun3}(이/가) 떠오르는 {conceptLabel} {trackCount}곡을 준비했습니다. {seasonKo} {timeKo}에 잘 어울리는 노래들입니다. {youtubeUrl}" }
   ]
 }

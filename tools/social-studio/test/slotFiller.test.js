@@ -9,6 +9,9 @@ import {
   selectTemplate,
   selectDistinctTemplates,
   selectTemplateWithinLimit,
+  selectTemplateWithMinMaxLength,
+  collapseDuplicateParticles,
+  hasDuplicateParticles,
   TemplatePoolError,
 } from '../generate/slotFiller.js';
 
@@ -115,6 +118,85 @@ test('selectTemplateWithinLimit reports withinLimit:false (never truncates) when
     { id: 't2', text: '{x} 이것 역시 제한보다 훨씬 긴 문장입니다' },
   ];
   const result = selectTemplateWithinLimit(templates, { x: '값' }, 'set-name', 'salt', null, { maxLength: 3, maxRetries: 5 });
+  assert.equal(result.withinLimit, false);
+  assert.equal(result.text, null);
+});
+
+// --- TASK-S8 작업 F: 조사 중복 ---
+
+test('S8: collapseDuplicateParticles collapses 의의/이이/를를/은은/가가/에에/과과/와와/로로 to a single particle', () => {
+  assert.equal(collapseDuplicateParticles('늦여름의의 시작'), '늦여름의 시작');
+  assert.equal(collapseDuplicateParticles('노래이이 좋다'), '노래이 좋다');
+  assert.equal(collapseDuplicateParticles('음악를를 듣다'), '음악를 듣다');
+  assert.equal(collapseDuplicateParticles('해변 산책로로 갑니다'), '해변 산책로 갑니다');
+  assert.ok(!hasDuplicateParticles(collapseDuplicateParticles('해변 산책로로 갑니다')));
+});
+
+test('S8: collapseDuplicateParticles leaves ordinary text (no duplicate) untouched', () => {
+  assert.equal(collapseDuplicateParticles('늦여름의 시작에 어울리는 노래'), '늦여름의 시작에 어울리는 노래');
+});
+
+test('S8: fillSlots applies the collapse automatically when a slot value ends where the template repeats the same particle', () => {
+  // A place-category dictionary value ending in "로" (해변 산책로), followed by
+  // the (으로/로) marker — the marker resolves to the short form "로" (no
+  // batchim), producing an adjacent "로로" that fillSlots must collapse.
+  const result = fillSlots('{x}(으로/로) 간다', { x: '해변 산책로' });
+  assert.equal(result, '해변 산책로 간다');
+  assert.ok(!hasDuplicateParticles(result));
+});
+
+test('S8: hasDuplicateParticles detects a residual triple-repeat that a single collapse pass can\'t fully resolve', () => {
+  // String.replace with a global regex scans the ORIGINAL string once, so
+  // "의의의" (three) collapses to "의의" (still duplicated) in one pass —
+  // this is the deliberately-imperfect case textPack.js's checkField()
+  // reports as an error rather than silently trusting the collapse.
+  const collapsed = collapseDuplicateParticles('의의의');
+  assert.ok(hasDuplicateParticles(collapsed), `expected a residual duplicate after one pass, got: "${collapsed}"`);
+});
+
+test('S8: hasDuplicateParticles is false for ordinary text', () => {
+  assert.ok(!hasDuplicateParticles('늦여름의 시작에 어울리는 노래, 느린 아침'));
+});
+
+// --- TASK-S8 작업 E: 최소 길이 재시도 ---
+
+test('S8: selectTemplateWithMinMaxLength prefers a template that clears BOTH minLength and maxLength', () => {
+  const templates = [
+    { id: 'short', text: '{x} 짧음' },
+    { id: 'long', text: '{x}(이/가) 충분히 길게 늘어지는 문장으로 최소 길이를 넘습니다' },
+  ];
+  const result = selectTemplateWithMinMaxLength(templates, { x: '값' }, 'set-name', 'salt', null, {
+    minLength: 15,
+    maxLength: 100,
+    maxRetries: 5,
+  });
+  assert.equal(result.withinLimit, true);
+  assert.equal(result.metMinLength, true);
+  assert.ok(result.text.length >= 15);
+});
+
+test('S8: selectTemplateWithMinMaxLength falls back to a short-but-valid template (never blanks) when nothing clears minLength', () => {
+  const templates = [
+    { id: 't1', text: '{x} 짧음' },
+    { id: 't2', text: '{x} 역시 짧음' },
+  ];
+  const result = selectTemplateWithMinMaxLength(templates, { x: '값' }, 'set-name', 'salt', null, {
+    minLength: 1000,
+    maxLength: 2000,
+    maxRetries: 5,
+  });
+  assert.equal(result.withinLimit, true);
+  assert.equal(result.metMinLength, false);
+  assert.ok(result.text, 'expected a short fallback text, not null — spec: "짧아도 남기고 경고"');
+});
+
+test('S8: selectTemplateWithMinMaxLength still reports withinLimit:false when nothing fits under maxLength at all', () => {
+  const templates = [{ id: 't1', text: '{x} 이것은 제한보다 훨씬 긴 문장입니다' }];
+  const result = selectTemplateWithMinMaxLength(templates, { x: '값' }, 'set-name', 'salt', null, {
+    minLength: 0,
+    maxLength: 3,
+    maxRetries: 5,
+  });
   assert.equal(result.withinLimit, false);
   assert.equal(result.text, null);
 });

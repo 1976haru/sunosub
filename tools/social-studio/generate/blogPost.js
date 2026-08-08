@@ -19,10 +19,10 @@ function buildSongListHtml(songs) {
 // Naver (Korean channel)
 // ---------------------------------------------------------------------------
 
-export function generateNaver(normalized, { channelId, hashtagPool, limits, youtubeUrl } = {}) {
+export function generateNaver(normalized, { channelId, hashtagPool, limits, youtubeUrl, excludeSceneNouns } = {}) {
   const setName = normalized.set.setName;
   const templates = loadTemplateFile(channelId, 'naver');
-  const slots = buildSetSlots(normalized, { youtubeUrl });
+  const slots = buildSetSlots(normalized, { youtubeUrl, excludeSceneNouns });
   const warnings = [];
 
   const titlePick = selectTemplateWithinLimit(templates, slots, setName, 'nv-title', { role: 'title' }, { maxRetries: 5 });
@@ -39,7 +39,7 @@ export function generateNaver(normalized, { channelId, hashtagPool, limits, yout
     '<p></p>',
   ].filter(Boolean).join('\n');
 
-  const tags = rotatedSlice(setName, 'nv-tags', hashtagPool.tags, limits.naver.tagMax);
+  const tags = rotatedSlice(setName, 'nv-tags', hashtagPool.naver, limits.naver.tagMax);
 
   return {
     title: titlePick.withinLimit ? titlePick.text : null,

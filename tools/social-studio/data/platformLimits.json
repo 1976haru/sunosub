@@ -1,9 +1,10 @@
 {
   "version": 1,
-  "youtube": { "titleMax": 100, "descMax": 5000, "tagsTotalMax": 500, "hashtagCount": 15, "tagCount": 20 },
-  "instagram": { "captionMax": 2200, "hashtagMax": 30 },
-  "x": { "postMax": 280, "urlLength": 23 },
-  "facebook": { "postMax": 63206 },
+  "_comment": "TASK-S8: added captionMin/postMin/titleMin — a generated item that clears the max but barely uses any of it (49-char Instagram caption against a 2200-char limit) reads as thin, not just short. See generate/slotFiller.js's selectTemplateWithMinMaxLength().",
+  "youtube": { "titleMax": 100, "titleMin": 25, "descMax": 5000, "tagsTotalMax": 500, "hashtagCount": 15, "tagCount": 20 },
+  "instagram": { "captionMax": 2200, "captionMin": 250, "hashtagMax": 30 },
+  "x": { "postMax": 280, "postMin": 90, "urlLength": 23 },
+  "facebook": { "postMax": 63206, "postMin": 150 },
   "naver": { "tagMax": 10 },
   "tiktok": { "captionMax": 2200, "hashtagMax": 5 },
   "threads": { "hashtagMax": 1 }

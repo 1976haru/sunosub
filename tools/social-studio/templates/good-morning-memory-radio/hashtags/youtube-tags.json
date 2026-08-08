@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "youtube-tags",
+  "_comment": "TASK-S8 — YouTube video tags (platformLimits.youtube.tagCount=20, joined length capped by tagsTotalMax). These are search terms typed into YouTube's search box, not display hashtags — deliberately longer, situational phrases (선물/상황/시간대 검색) rather than mood words, per TASK-S8 background section 3's '부모님선물, 효도플레이리스트, 잔잔한아침' examples.",
+  "tags": [
+    "부모님선물", "효도플레이리스트", "잔잔한아침", "부모님생신선물", "어버이날선물",
+    "명절선물음악", "팔순잔치음악", "칠순잔치노래", "경로당노래", "노인정노래",
+    "출근길플레이리스트", "카페에서듣기좋은노래", "밤에듣기좋은노래", "운전할때듣는노래", "잠들기전듣는노래",
+    "공부할때듣는노래", "설거지할때듣는노래", "청소할때듣는노래", "산책할때듣는노래", "노래방18번",
+    "7080추억팝송", "세대공감플레이리스트", "중장년노래모음", "시니어음악추천", "어르신이좋아하는노래",
+    "옛날가요모음", "추억의라디오", "감성라디오방송", "잔잔한저녁", "일요일아침음악",
+    "커피한잔음악", "혼자듣기좋은노래", "가족과함께듣는노래", "드라이브음악추천", "비오는날노래",
+    "가을에듣기좋은노래", "겨울감성노래", "따뜻한음악모음", "마음이편안해지는노래", "힐링플레이리스트추천"
+  ]
+}

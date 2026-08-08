@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "naver",
+  "_comment": "TASK-S8 — Naver blog tags (platformLimits.naver.tagMax=10). Naver's blog tag field is itself a search-keyword surface (다음 검색 유입과 유사) — phrased as blog-post-title-style search queries, distinct from youtube-tags.json's YouTube-search phrasing and instagram.json's discovery hashtags.",
+  "tags": [
+    "7080노래모음", "추억의팝송모음", "감성플레이리스트추천", "노래방애창곡", "부모님드리는선물",
+    "효도선물음악", "경로당음악", "시니어플레이리스트", "중장년음악추천", "어르신노래모음",
+    "옛날가요베스트", "7080세대음악", "추억라디오방송", "잔잔한노래추천", "카페음악모음",
+    "아침에듣는노래", "저녁에듣는노래", "힐링음악모음", "감성노래가사", "세대공감노래"
+  ]
+}

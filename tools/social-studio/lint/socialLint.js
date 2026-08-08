@@ -20,11 +20,14 @@ import * as platformRules from './rules/platformRules.js';
 import * as bannedPhrasesRule from './rules/bannedPhrases.js';
 import * as postingCadence from './rules/postingCadence.js';
 import * as wordRepetition from './rules/wordRepetition.js';
+import * as intraSetRepetition from './rules/intraSetRepetition.js';
+import * as crossPlatformHashtagOverlap from './rules/crossPlatformHashtagOverlap.js';
 import { extractProseFields, contentFingerprint } from './similarity.js';
 import {
   resolvePostingDate,
   listOtherSetsInSameWeek,
   loadTextpackForSet,
+  loadNormalizedForSet,
 } from '../store/lintHistory.js';
 import * as history from '../store/history.js';
 
@@ -219,6 +222,7 @@ export function runSocialLint(setName, options = {}) {
   const bannedPhrasesConfig = loadBannedPhrasesConfig();
   const phrases = mergeBannedPhrases(bannedPhrasesConfig, textpack.channelId);
   const poolSizes = loadTemplatePoolSizes(textpack.channelId);
+  const normalized = loadNormalizedForSet(setName);
 
   const ruleResults = [
     crossChannel.check(textpack, { threshold: thresholds.R1_crossChannelSimilarity, candidates }),
@@ -228,6 +232,8 @@ export function runSocialLint(setName, options = {}) {
     bannedPhrasesRule.check(textpack, { phrases }),
     postingCadence.check(textpack, { maxPostsPer24h: thresholds.R6_maxPostsPer24h, currentDate, recentEntries: recentEntriesForCadence }),
     wordRepetition.check(textpack, { maxNounRepeat: thresholds.R7_maxNounRepeat }),
+    intraSetRepetition.check(textpack, { normalized, maxAcrossPlatforms: thresholds.R8_maxSceneNounAcrossPlatforms }),
+    crossPlatformHashtagOverlap.check(textpack, { threshold: thresholds.R9_crossPlatformHashtagOverlap }),
   ];
 
   const violations = ruleResults.flatMap((r) => r.violations);
@@ -237,7 +243,13 @@ export function runSocialLint(setName, options = {}) {
   const warnCount = violations.filter((v) => v.severity === 'warn').length;
   const passCount = totalChecked - errorCount - warnCount;
 
-  const regenerate = [...new Set(violations.filter((v) => v.severity === 'error').map((v) => v.path))];
+  // TASK-S8: R8 is severity 'warn' but still needs a reroll (spec: "위반 시
+  // regenerate 배열에 해당 항목을 넣는다") — so a violation opts into
+  // regeneration explicitly via `regenerate: true` rather than only ever
+  // inferring it from severity==='error'. Every pre-S8 rule leaves this
+  // field unset, so this is additive: nothing else's regenerate-eligibility
+  // changes.
+  const regenerate = [...new Set(violations.filter((v) => v.severity === 'error' || v.regenerate === true).map((v) => v.path))];
 
   return {
     setName,

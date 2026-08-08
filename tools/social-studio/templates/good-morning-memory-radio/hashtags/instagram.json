@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "instagram",
+  "_comment": "TASK-S8 — Instagram caption/first-comment hashtags (platformLimits.instagram.hashtagMax=30). Exposure-oriented — Instagram discovery hashtags and community tags — not youtube.json's brand/mood set or youtube-tags.json's search phrases, so R9 cross-platform overlap stays low.",
+  "hashtags": [
+    "#감성스타그램", "#음악스타그램", "#힐링스타그램", "#플레이리스트추천", "#오늘의플레이리스트",
+    "#감성사진", "#카페스타그램", "#무드스타그램", "#소통해요", "#선팔맞팔",
+    "#데일리그램", "#일상스타그램", "#감성충전소", "#노래추천", "#음악추천",
+    "#플리추천", "#감성플리", "#힐링타임", "#여유로운시간", "#마음의양식",
+    "#추억소환", "#그시절노래", "#7080세대", "#7080감성", "#옛날노래추천",
+    "#부모님선물음악", "#효도영상", "#세대공감", "#어른들의감성", "#따뜻한하루",
+    "#잔잔한음악추천", "#편안한하루", "#감성뮤직", "#오늘의음악", "#음악이있는일상",
+    "#가을감성", "#겨울감성", "#봄노래", "#여름밤노래", "#힐링음악추천",
+    "#카페플레이리스트", "#드라이브플레이리스트", "#감성라이프", "#소소한행복", "#마음쉼표",
+    "#굿모닝인사", "#좋은아침", "#평안한하루", "#소통스타그램", "#맞팔환영",
+    "#nostalgicvibes", "#healingtime", "#morningvibes", "#retromusic", "#koreanoldiesplaylist",
+    "#feelgoodmusic", "#cozyvibes", "#slowmorning", "#musicgram", "#playlistoftheday"
+  ]
+}

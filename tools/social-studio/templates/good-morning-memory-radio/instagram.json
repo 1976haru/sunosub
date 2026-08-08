@@ -2,6 +2,7 @@
   "version": 1,
   "channelId": "good-morning-memory-radio",
   "platform": "instagram",
+  "_comment": "TASK-S8: ig-012~015 are the longer templates that clear platformLimits.instagram.captionMin (250자) — scene description + {topSongsList} (대표곡 3곡) + a listening-situation line + CTA, per spec §5. The older short ones (ig-001~011) stay in the pool; selectTemplateWithMinMaxLength() retries past them toward these when a caption comes up short, rather than replacing them outright.",
   "templates": [
     { "id": "ig-001", "text": "{seasonKo} {timeKo}입니다 🎶\n{sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 {conceptLabel} {trackCount}곡을 준비했어요.\n오늘도 편안한 하루 보내세요. 유튜브 링크는 프로필에 있습니다." },
     { "id": "ig-002", "text": "{emotionFromKo}(이/가) {emotionToKo}(으로/로) 바뀌어가는 시간.\n{conceptLabel} {trackCount}곡, 지금 유튜브에서 만나보세요." },
@@ -13,6 +14,14 @@
     { "id": "ig-008", "text": "{seasonKo} {timeKo}에 듣는 {conceptLabel}.\n{sceneNoun1}, {sceneNoun3}(이/가) 함께하는 {trackCount}곡입니다." },
     { "id": "ig-009", "text": "오늘의 {conceptLabel} 플레이리스트 🎧\n{emotionFromKo}에서 {emotionToKo}까지, {trackCount}곡으로 채웠습니다." },
     { "id": "ig-010", "text": "{channelLabel}(과/와) 함께하는 {timeKo}.\n{sceneNoun2}(이/가) 생각나는 노래 {trackCount}곡, 프로필 링크에서 들어보세요." },
-    { "id": "ig-011", "text": "{sceneNoun1}(과/와) {sceneNoun2}, 그리고 {emotionToKo}.\n{conceptLabel} {trackCount}곡에 오늘의 이야기를 담았습니다." }
+    { "id": "ig-011", "text": "{sceneNoun1}(과/와) {sceneNoun2}, 그리고 {emotionToKo}.\n{conceptLabel} {trackCount}곡에 오늘의 이야기를 담았습니다." },
+    { "id": "ig-012", "text": "{seasonKo} {timeKo}입니다.\n\n오늘은 {sceneNoun1}(과/와) {sceneNoun2}, 그리고 {sceneNoun3}(이/가) 떠오르는 {conceptLabel} {trackCount}곡을 준비했습니다. 한 곡 한 곡 고르면서, 그 시절 라디오에서 흘러나오던 노래들을 다시 듣는 기분으로 정성껏 담았습니다.\n\n오늘 특히 추천하는 세 곡은 이렇습니다.\n{topSongsList}\n\n{timeKo}, 혼자만의 여유로운 시간에 볼륨을 낮추고 편하게 들어보세요. 커피 한 잔, 또는 좋아하시는 차 한 잔과 함께라면 더욱 좋습니다.\n\n프로필 링크에서 전곡을 이어서 들으실 수 있습니다. 댓글로 오늘 마음에 든 곡을 알려주시면 다음 플레이리스트를 준비할 때 소중히 참고하겠습니다. 늘 함께해 주셔서 감사합니다." },
+    { "id": "ig-013", "text": "{channelLabel}입니다. 오늘도 이렇게 인사드립니다.\n\n{seasonKo} {timeKo}에 어울리는 {conceptLabel} {trackCount}곡을 정성껏 모았습니다. {sceneNoun1}, {sceneNoun2}, {sceneNoun3}(이/가) 떠오르는 곡들로 채웠고, 한 곡씩 순서를 고르는 데도 시간을 들였습니다.\n\n오늘의 대표곡 세 곡을 먼저 소개합니다.\n{topSongsList}\n\n좋아하시는 차 한 잔, 혹은 따뜻한 커피 한 잔과 함께 천천히 들어보시길 바랍니다. 전곡은 프로필 링크에서 이어서 들으실 수 있어요.\n\n마음에 드는 곡이 있다면 댓글로 알려주세요. 다음에 만들 플레이리스트에 참고하겠습니다." },
+    { "id": "ig-014", "text": "{emotionFromKo}에서 {emotionToKo}(으로/로) 흘러가는 {conceptLabel} {trackCount}곡을 오늘 준비했습니다. 하나의 감정에서 다른 감정으로 넘어가는 흐름을 따라 곡 순서를 정했습니다.\n\n{sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 노래부터 {sceneNoun3}(이/가) 생각나는 곡까지 골고루 담았습니다.\n\n먼저 들어보시면 좋을 세 곡을 소개합니다.\n{topSongsList}\n\n{timeKo}에 볼륨을 낮추고 편안한 자세로 들어보세요. 프로필 링크에서 전곡을 확인하실 수 있습니다. 오늘도 좋은 하루 보내시길 바랍니다." },
+    { "id": "ig-015", "text": "오늘의 {conceptLabel} 플레이리스트를 소개합니다 🎧\n\n{sceneNoun1}, {sceneNoun2}, {sceneNoun3}, 그리고 {seasonKo} {timeKo}의 분위기를 담아 {trackCount}곡을 골랐습니다. 한 곡 한 곡이 그 시절의 어느 하루를 떠올리게 해 줄 거예요.\n\n대표곡 세 곡을 먼저 들어보세요.\n{topSongsList}\n\n전곡은 프로필 링크에서 이어서 들으실 수 있습니다. 오늘 하루도 평안하시고, 마음에 드는 곡이 있다면 댓글로 알려주시면 정말 반갑겠습니다." },
+    { "id": "ig-016", "text": "{channelLabel}(이/가) 오늘도 인사드립니다.\n\n{seasonKo} {timeKo}에 어울리는 {conceptLabel} {trackCount}곡을 준비했습니다. {sceneNoun1}, {sceneNoun2}, {sceneNoun3}(이/가) 떠오르는 곡들로 채웠고, 순서 하나하나에도 신경을 썼습니다.\n\n오늘 먼저 들어보시면 좋을 세 곡입니다.\n{topSongsList}\n\n{timeKo}, 좋아하는 자리에 앉아 편하게 들어보세요. 전곡은 프로필 링크에서 이어 들으실 수 있습니다. 늘 함께해 주셔서 감사합니다." },
+    { "id": "ig-017", "text": "{emotionFromKo}에서 시작해 {emotionToKo}(으로/로) 이어지는 {conceptLabel} {trackCount}곡입니다. 오늘 하루의 마음을 그대로 담아보려 했습니다.\n\n{sceneNoun1}(이/가) 떠오르는 곡, {sceneNoun2}(이/가) 생각나는 곡, {sceneNoun3}(이/가) 어울리는 곡까지 골고루 담았습니다.\n\n오늘의 추천곡 세 곡입니다.\n{topSongsList}\n\n프로필 링크에서 전곡을 들어보세요. 오늘 하루도 평안하시길 바라며, 댓글로 안부 전해주시면 감사하겠습니다." },
+    { "id": "ig-018", "text": "{seasonKo} {timeKo}에 어울리는 노래를 정성껏 모았습니다.\n\n{conceptLabel} {trackCount}곡, {sceneNoun1}(과/와) {sceneNoun2}(이/가) 떠오르는 곡부터 {sceneNoun3}(이/가) 생각나는 곡까지 담았습니다. 곡을 고르는 내내 즐거운 시간이었습니다.\n\n대표곡 세 곡을 먼저 소개합니다.\n{topSongsList}\n\n편안한 자리에서 볼륨을 낮추고 들어보세요. 전곡은 프로필 링크에서 만나보실 수 있습니다. 댓글도 언제나 환영합니다." },
+    { "id": "ig-019", "text": "오늘도 {channelLabel}(을/를) 찾아주셔서 감사합니다.\n\n{conceptLabel} {trackCount}곡을 새로 준비했습니다. {sceneNoun1}, {sceneNoun2}, {sceneNoun3}(이/가) 떠오르는 {seasonKo} {timeKo}에 어울리는 곡들로, 하나하나 정성껏 골랐습니다.\n\n오늘의 대표곡입니다.\n{topSongsList}\n\n프로필 링크에서 전곡을 이어서 들어보세요. 마음에 든 곡이 있다면 댓글로 알려주시면 다음에 소중히 참고하겠습니다." }
   ]
 }

@@ -355,3 +355,95 @@ TASK-S7은 반대로 실제 파일(`D:\suno\suno-current\lyrics\`의 v1/v2 세�
 유튜브 제목 후보에 "70년대 올드팝 명곡 ~ 이후 플레이리스트"가 나왔다(완료 보고 참조).
 `category: "relative"`로 재분류해 고쳤다 — 사전 항목 자체는 그대로 유지되므로
 coverage.nouns나 다른 매칭에는 영향이 없다.
+
+## 15. TASK-S8 — 텍스트 팩 출력 품질 보정
+
+TASK-S7까지는 "생성이 성공하는가"를 봤다. TASK-S8은 실제 생성된 문장을 처음부터 끝까지
+읽고 발견한 8가지 문제(사전이 문장에 반영 안 됨, 세트 내 플랫폼 간 반복, 해시태그 풀
+공유, 인스타 캡션/첫댓글 동일, 글자수 미달, 조사 중복, 가사 인용이 영어, 금지 표현
+미검출)를 고쳤다.
+
+### 작업 A — sceneNouns 희소성 가중
+
+`parse/setPackLoader.js`의 `set.sceneNouns`가 단순 빈도순이라 18곡 전부에 나오는
+`table`/`window`/`road` 같은 흔한 단어가 상위를 차지했다. `data/sceneNounWeights.json`에
+가중치를 두고 `scoreSceneTerms()`/`rankSceneTerms()`로 재구현했다: `score = 등장곡수
+구간별 가중치 × (1/등장곡수)`. 최소 rare-word 개수 보장(`minRareInTop`)과 카테고리
+다양성 보정(`diversityCategories`)은 둘 다 **swap 후 재정렬하지 않는다** — 처음 구현에서
+낮은 점수의 다양성 후보를 정렬로 다시 밀어내는 버그가 있었다(테스트로 발견, 수정함).
+
+**더 중요한 발견**: `set.sceneNouns`를 고쳐도 실제 문장은 그대로였다. 문장에 실제로
+쓰이는 슬롯(`{sceneNoun1}` 등)은 `generate/youtubeSet.js`의 `deriveSceneNouns()`가 **별도로**
+단순 빈도 계산을 하고 있었다 — S0의 `sceneNouns` 계산과 완전히 분리되어 있었다. 이걸
+고치지 않으면 지난 작업(TASK-S7)과 똑같이 "숫자는 올랐지만 문장은 그대로"가 반복된다.
+`deriveSceneNouns()`가 `rankSceneTerms()`를 재사용하도록 고쳤다(`generate/youtubeSet.js`가
+`parse/setPackLoader.js`를 import — S1이 S0의 계산 로직을 재사용하는 것은 문제없다).
+
+### 작업 B — R8 intraSetRepetition + 재생성
+
+`lint/rules/intraSetRepetition.js`(R8)는 같은 세트의 naver.bodyHtml/facebook.body/
+x.main/x.thread 네 항목에서 같은 sceneNoun이 2회 초과 등장하면 잡는다. severity는 warn이지만
+`regenerate: true`를 달아 `lint/socialLint.js`의 regenerate 배열 계산(원래 error 전용)에
+포함되도록 확장했다(다른 규칙은 전부 이 필드가 없으므로 하위 호환).
+
+검사 후보 단어는 `normalized.set.sceneNouns`(top-12) 전체에서 두 가지를 뺀다:
+- 현재 `{timeKo}` 슬롯 값 — 모든 플랫폼이 의도적으로 공유하는 값이라 "반복"이 아니다.
+- 채널 라벨(`channelLabel`)의 부분 문자열 — "굿모닝 추억라디오"에 포함된 "라디오"가
+  대표적이다. `radio` 사전 항목의 ko가 우연히 채널명의 일부와 같아서, 채널명이 언급될
+  때마다(의도된 브랜드 노출) 오탐이 뜬다. 실제 v2 세트를 돌려서 찾은 문제다.
+
+재생성은 `generate/textPack.js`의 `buildRegenerateFn(normalized, options)`이 맡는다.
+`runLintWithRegeneration`이 이 함수를 **같은 인스턴스**로 반복 호출한다는 점이 중요하다
+— 클로저에 누적되는 `excludeSceneNouns` 집합을 매 호출 시작에 "지금 이 exclude 상태로
+뽑힐 sceneNoun1-3"을 먼저 추가한 뒤 생성한다. 처음 구현은 매 호출마다 exclude 집합을
+새로 계산해서 매번 똑같은 대체 단어로 수렴하는 버그가 있었다(예: "커피"를 빼도 항상
+"포치 그네"로만 감. 그 "포치 그네"가 또 반복되면 다음 시도에서도 여전히 "포치 그네"만
+빠지지 않는 문제) — 실제 v2 세트로 재생성 루프를 끝까지 돌려서 발견했다.
+
+### 작업 C — 해시태그 풀 분리
+
+`templates/_shared/hashtags.json` 하나(해시태그 45개, 태그 30개)를 모든 플랫폼이 공유해서,
+유튜브 상위 15개와 쇼츠 5개가 자주 겹쳤다. `templates/{channelId}/hashtags/
+{youtube,youtube-tags,instagram,naver,shorts}.json` 다섯 개로 나눴다. 각 풀은 필요
+개수의 2배 이상(유튜브 37/40, 인스타 60, 네이버 20, 쇼츠 12)이고, 플랫폼 간 실측
+중복률은 전부 0(교집합 없음) — R9가 검사하는 0.30 상한에 크게 못 미친다. 유튜브 태그
+풀(`youtube-tags.json`)은 검색어 스타일(`부모님선물`, `효도플레이리스트` 등)로 따로 썼다.
+
+### 작업 E — 최소 길이 재시도
+
+`generate/slotFiller.js`의 `selectTemplateWithMinMaxLength()`는 기존
+`selectTemplateWithinLimit()`과 별개다 — max만 검사하던 기존 함수를 바꾸면 기존 호출자
+동작이 달라지므로, 최소/최대를 함께 보는 새 함수를 추가했다. 재시도 상한은 지시문 예시
+값(5)이 아니라 12를 썼다 — 실제 두 샘플 세트에서 5회 안에 충분히 긴 템플릿이 로테이션
+순서상 걸리지 않는 경우가 있어서(포치용 인스타 캡션 템플릿 9개 중 6번째 위치),
+5로는 완료조건 8번(캡션 250자 이상)이 실제로 통과하지 않았다. 인스타/X/페이스북
+템플릿 풀에 더 긴 버전을 추가할 때도 처음 쓴 문장은 실측 200자 안팎으로 목표(250자)에
+못 미쳤다 — 초안 문장 길이를 감으로 어림하지 말고 매번 실행해서 실제 글자수를
+확인해야 했다.
+
+### 작업 F — 조사 중복
+
+"늦여름의 시작의 노래" 버그는 지시문 설명("슬롯 값이 조사로 끝나는 경우")과 실제
+메커니즘이 달랐다 — `seasonKo`("늦여름의 시작")는 "시작"으로 끝나지 "의"로 끝나지
+않는다. 실제 원인은 `sh-t-005` 템플릿이 `{seasonKo}의 노래`처럼 이미 완결된 구
+뒤에 조사를 하드코딩한 것이었다. 이건 템플릿을 고쳐서(`{seasonKo}에 어울리는 노래`)
+해결했다.
+
+일반적인 "인접 중복"(의의/이이/를를 등)은 별도로 `collapseDuplicateParticles()`가
+`fillSlots()` 안에서 항상 실행된다 — 예: `해변 산책로`(place, "로"로 끝남) 뒤에
+`(으로/로)` 마커가 받침 없음 판정으로 "로"를 골라 "산책로로"가 되는 경우. 실제
+`yt-t-012` 템플�릿에 이 조합이 있다.
+
+### 작업 G — 가사 인용 언어 가드
+
+`meta.lyricLanguage`(가사 언어)와 `normalized.set.outputLanguage`(출력 언어)가
+다르면 `x.lyricQuote`를 생략하고 경고를 남긴다. 한국어 채널 + 영어 가사(v1/v2 샘플
+둘 다 이 경우)에서 실제로 생략되고 "가사가 영어이므로 인용을 생략했습니다"가
+warnings에 남는 것을 확인했다.
+
+### 작업 H — 금지 표현
+
+`data/bannedPhrases.json`이 비어있던 게 아니라(20개 있었다), 지시문이 준 구체적 표현
+("구독과 알림", "알림 설정" 등)이 목록에 없었을 뿐이다. R5 자체(`lint/rules/
+bannedPhrases.js`)는 이미 `youtube.pinnedComment`를 포함해 전체 textpack을 스캔하고
+있었다 — 검사 로직은 멀쩡했고 데이터만 비어 있었다.

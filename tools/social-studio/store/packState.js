@@ -237,8 +237,17 @@ function buildRawItems(textpack, limits, xLive) {
   push('x.lyricQuote', 'x', '가사 인용', xLive ? xLive.lyricQuote : textpack.x.lyricQuote, {});
 
   push('instagram.caption', 'instagram', '캡션', textpack.instagram.caption, { limit: limits.instagram.captionMax, limitUnit: 'chars', multiline: true });
-  push('instagram.hashtags', 'instagram', `해시태그 ${textpack.instagram.hashtags.length}개`, textpack.instagram.hashtags.join(' '), { limit: limits.instagram.hashtagMax, limitUnit: 'space-count' });
-  push('instagram.firstComment', 'instagram', '첫 댓글', textpack.instagram.firstComment, {});
+  // TASK-S8: hashtags는 참고용 목록이고, 실제로 댓글에 붙일 것은
+  // firstComment다 — 화면에서 이 둘을 각각 복사해 둘 다 붙이면 해시태그가
+  // 두 번(최대 60개) 들어가 인스타 제한(30개)을 넘긴다. note로 명시한다.
+  push('instagram.hashtags', 'instagram', `해시태그 ${textpack.instagram.hashtags.length}개 (참고용)`, textpack.instagram.hashtags.join(' '), {
+    limit: limits.instagram.hashtagMax,
+    limitUnit: 'space-count',
+    note: '참고용 목록입니다 — 실제로 게시할 때는 아래 "첫 댓글"만 붙이세요.',
+  });
+  push('instagram.firstComment', 'instagram', '첫 댓글', textpack.instagram.firstComment, {
+    note: '캡션을 먼저 올린 뒤 첫 댓글로 해시태그를 답니다. 둘 다 붙이면 30개를 초과합니다.',
+  });
 
   for (const s of textpack.shorts || []) {
     push(`shorts.${s.trackNo}.titleKo`, 'shorts', `트랙 ${s.trackNo} 제목`, s.titleKo, {});
@@ -289,6 +298,7 @@ export function buildDisplayItems(setName) {
         edited: overridden,
         multiline: Boolean(item.multiline),
         hasFolder: Boolean(item.hasFolder),
+        note: item.note ?? null,
         limit: item.limit ?? null,
         limitUnit: item.limitUnit ?? null,
         count,

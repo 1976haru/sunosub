@@ -84,6 +84,25 @@ export function loadTemplateFile(channelId, platform) {
   return data.templates;
 }
 
+// TASK-S8 작업 F — 조사 중복. `{seasonKo}의 노래`처럼 템플릿이 조사를 직접
+// 적어둔 자리에, 슬롯 값 자체가 이미 그 조사로 끝나는 경우("늦여름의 시작")
+// "늦여름의 시작의 노래"처럼 겹친다. (이/가) 같은 마커 시스템은 받침에 따라
+// *어느 쪽* 조사를 쓸지 고르는 것이지 이 문제(같은 조사가 두 번)를 잡지
+// 않으므로 별도의 후처리로 다룬다. 단일 패스이므로 세 번 이상 겹치면 두
+// 개로만 줄어들 수 있다 — 그 잔여분은 hasDuplicateParticles()로 감지해
+// 호출자가 errors에 남기도록 한다(조용히 넘기지 않는다).
+const DUPLICATE_PARTICLE_PATTERN = /([의이를은가에과와로])\1/g;
+
+/** Collapses "의의"/"이이"/"를를"/"은은"/"가가"/"에에"/"과과"/"와와"/"로로" -> a single particle. Single-pass (see comment above). */
+export function collapseDuplicateParticles(text) {
+  return String(text ?? '').replace(DUPLICATE_PARTICLE_PATTERN, '$1');
+}
+
+/** True if a duplicated-particle pattern is still present (used post-collapse, as a residual-defect detector — see textPack.js's checkField). */
+export function hasDuplicateParticles(text) {
+  return new RegExp(DUPLICATE_PARTICLE_PATTERN.source).test(String(text ?? ''));
+}
+
 /**
  * Substitutes every {slot} in `text` from `slots`. Returns null — not a
  * string with blanks left in it — if ANY slot referenced by the template is
@@ -101,7 +120,8 @@ export function fillSlots(text, slots) {
     }
     return String(value);
   });
-  return allFilled ? resolveParticleMarkers(filled) : null;
+  if (!allFilled) return null;
+  return collapseDuplicateParticles(resolveParticleMarkers(filled));
 }
 
 /** Optional per-template filter, e.g. { role: 'intro' } for youtube-desc.json's mixed intro/closing pool. */
@@ -204,6 +224,45 @@ export function selectTemplateWithinLimit(templates, slots, setName, salt, filte
     retries += 1;
   }
   return { id: null, text: null, withinLimit: false };
+}
+
+/**
+ * TASK-S8 — like selectTemplateWithinLimit(), but also prefers a result that
+ * clears a MINIMUM length (spec: "생성 결과가 최소 길이에 미달하면 더 긴
+ * 템플릿으로 재시도한다"). A template that fits under maxLength but falls
+ * short of minLength is kept as a fallback (never blanked — spec: "짧아도
+ * 남기고 경고") while rotation keeps trying, within the same maxRetries
+ * budget, for one that clears minLength too. Returns
+ * `metMinLength: false` on the fallback case so the caller knows to warn.
+ *
+ * @param {{channelId: string, platform: string, weeks?: number}} [historyContext] - TASK-S6, optional
+ */
+export function selectTemplateWithMinMaxLength(templates, slots, setName, salt, filter, options = {}, historyContext = null) {
+  const { measure = (s) => s.length, maxLength = Infinity, minLength = 0, maxRetries = 5 } = options;
+  const pool = templates.filter((t) => matchesFilter(t, filter));
+  if (pool.length === 0) {
+    throw new TemplatePoolError(`조건에 맞는 템플릿이 없습니다 (filter=${JSON.stringify(filter)}).`);
+  }
+  const { order, warning } = resolveRotationOrder(pool, setName, salt, historyContext);
+  const attempts = Math.min(order.length, MAX_TEMPLATE_ATTEMPTS);
+  let fallback = null; // first template found that fit under maxLength, even if short of minLength
+  let retries = 0;
+  for (let i = 0; i < attempts && retries < maxRetries; i += 1) {
+    const template = pool[order[i]];
+    const filled = fillSlots(template.text, slots);
+    if (filled === null) continue;
+    const length = measure(filled);
+    if (length > maxLength) { retries += 1; continue; }
+    if (!fallback) fallback = { id: template.id, text: filled };
+    if (length >= minLength) {
+      return { id: template.id, text: filled, withinLimit: true, metMinLength: true, ...(warning ? { warning } : {}) };
+    }
+    retries += 1;
+  }
+  if (fallback) {
+    return { id: fallback.id, text: fallback.text, withinLimit: true, metMinLength: false, ...(warning ? { warning } : {}) };
+  }
+  return { id: null, text: null, withinLimit: false, metMinLength: false };
 }
 
 /**

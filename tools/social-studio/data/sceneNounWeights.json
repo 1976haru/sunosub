@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "_comment": "TASK-S8 — set.sceneNouns ranking. Plain top-by-frequency let words that appear in nearly every song (table/window/road) dominate every generated sentence, since those are common background, not what makes THIS set's scenes distinct. score(word) = bandWeight(그 단어가 등장한 곡 수) * (1 / 등장곡수). bandWeight는 곡 수 구간별 계수(희소=rareWeight, 보통=midWeight, 흔함=commonWeight)이고, (1/등장곡수)는 구간 안에서도 더 드문 쪽이 앞서도록 하는 연속값이다. 극단값(예: rareWeight를 commonWeight보다 낮게)으로 바꾸면 sceneNouns 순서가 실제로 바뀌어야 한다(완료조건 13) — 바뀌지 않으면 setPackLoader.js에 숫자가 하드코딩된 것이다.",
+  "rareMaxSongCount": 3,
+  "commonMinSongCount": 12,
+  "rareWeight": 5,
+  "midWeight": 1,
+  "commonWeight": 0.1,
+  "topCount": 12,
+  "minRareInTop": 6,
+  "diversityCheckCount": 6,
+  "diversityCategories": ["place", "time"]
+}

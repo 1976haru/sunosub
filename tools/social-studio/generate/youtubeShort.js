@@ -30,7 +30,7 @@ function buildOneShort(song, templates, setSlots, setName, hashtagPool) {
   const titlePick = selectTemplateWithinLimit(templates, slots, setName, `${salt}-title`, { role: 'title' }, { maxRetries: 5 });
   const descPick = selectTemplateWithinLimit(templates, slots, setName, `${salt}-desc`, { role: 'description' }, { maxRetries: 5 });
 
-  const hashtags = rotatedSlice(setName, salt, hashtagPool.hashtags, DEFAULT_HASHTAG_COUNT);
+  const hashtags = rotatedSlice(setName, salt, hashtagPool.shorts, DEFAULT_HASHTAG_COUNT);
 
   return {
     trackNo: song.trackNo,

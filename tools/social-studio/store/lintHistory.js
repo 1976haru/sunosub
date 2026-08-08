@@ -152,6 +152,19 @@ export function loadTextpackForSet(setName) {
   return applyOverrides(original, edited?.overrides);
 }
 
+/**
+ * TASK-S8 — R8 (intraSetRepetition) needs to know this set's own
+ * set.sceneNouns list (S0's output) to know which words even count as
+ * "scene nouns" worth checking for cross-platform repetition. normalized.json
+ * sits right next to textpack.json under the same out/{setName}/ directory,
+ * so this is a read, not a recomputation. Returns null (never throws) when
+ * absent — R8 degrades to "nothing to check" rather than failing the whole
+ * lint run, same fallback shape as every other lookup in this file.
+ */
+export function loadNormalizedForSet(setName) {
+  return readJsonIfExists(path.join(OUT_ROOT, setName, 'normalized.json'));
+}
+
 /** Every out/ set directory (other than currentSetName) whose date falls in the same week bucket and whose channelId differs. Bounded scan (completion condition #11). */
 export function listOtherSetsInSameWeek(currentSetName, currentChannelId) {
   if (!fs.existsSync(OUT_ROOT)) return [];

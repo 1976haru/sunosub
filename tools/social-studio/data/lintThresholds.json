@@ -5,6 +5,8 @@
   "R3_hashtagOverlapRatio": 0.80,
   "R6_maxPostsPer24h": 2,
   "R7_maxNounRepeat": 3,
+  "R8_maxSceneNounAcrossPlatforms": 2,
+  "R9_crossPlatformHashtagOverlap": 0.30,
   "regenerateMaxAttempts": 5,
   "historyMaxEntries": 200
 }

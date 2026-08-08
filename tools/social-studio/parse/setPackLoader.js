@@ -37,6 +37,7 @@ import { parseEmotionArc } from './emotionArcParser.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const CHANNELS_PATH = path.join(ROOT, 'data', 'channels.json');
+const SCENE_NOUN_WEIGHTS_PATH = path.join(ROOT, 'data', 'sceneNounWeights.json');
 const OUT_ROOT = path.join(ROOT, 'out');
 
 const REQUIRED_META_FIELDS = ['setName', 'channelId', 'channelLabel', 'songCount', 'lyricLanguage'];
@@ -168,6 +169,122 @@ function topByFrequency(values, limit) {
     .slice(0, limit);
 }
 
+export function loadSceneNounWeights() {
+  const raw = fs.readFileSync(SCENE_NOUN_WEIGHTS_PATH, 'utf8').replace(/^﻿/, '');
+  return JSON.parse(raw);
+}
+
+function sceneNounBandWeight(songCount, weights) {
+  if (songCount <= weights.rareMaxSongCount) return weights.rareWeight;
+  if (songCount >= weights.commonMinSongCount) return weights.commonWeight;
+  return weights.midWeight;
+}
+
+/**
+ * TASK-S8 — rarity-weighted scene-noun scoring (replaces plain
+ * top-by-frequency, which let words appearing in nearly every song dominate
+ * every generated sentence — see data/sceneNounWeights.json's _comment).
+ *
+ * `termInfo` is Map<ko, {songs: Set<trackNo>, category: string|null, order: number}>.
+ * Returns every entry, sorted score-descending (not sliced to a limit) —
+ * unknown terms never reach this map at all, since it's only ever fed from
+ * scanTextMulti's matchedTerms (spec requirement: "사전에 등재된 단어만
+ * 대상으로 한다").
+ */
+export function scoreSceneTerms(termInfo, weights) {
+  const entries = [...termInfo.entries()].map(([ko, info]) => {
+    const songCount = info.songs.size;
+    const score = sceneNounBandWeight(songCount, weights) * (1 / songCount);
+    return { ko, songCount, category: info.category, order: info.order, score };
+  });
+  entries.sort((a, b) => b.score - a.score || a.order - b.order);
+  return entries;
+}
+
+/**
+ * Takes the top `limit` scored entries and, ONLY when `limit` is large
+ * enough for the rule to be meaningful (>= weights.minRareInTop /
+ * diversityCheckCount respectively — a 3-slot list has no room for a
+ * "6 rare words" guarantee), applies the rare-word backstop and category
+ * diversity swap described in data/sceneNounWeights.json. Shared by
+ * setPackLoader.js's set.sceneNouns (limit 12, both rules active) and
+ * generate/youtubeSet.js's per-template sceneNoun1-3 slots (limit 3,
+ * neither rule active — score ordering alone already does the job there).
+ */
+export function rankSceneTerms(termInfo, weights, limit) {
+  const isRare = (e) => e.songCount <= weights.rareMaxSongCount;
+  const sorted = scoreSceneTerms(termInfo, weights);
+  let top = sorted.slice(0, limit);
+
+  if (weights.minRareInTop <= limit) {
+    let rareCount = top.filter(isRare).length;
+    if (rareCount < weights.minRareInTop) {
+      const topKoSet = new Set(top.map((e) => e.ko));
+      const extraRare = sorted.filter((e) => isRare(e) && !topKoSet.has(e.ko));
+      for (let i = 0; i < extraRare.length && rareCount < weights.minRareInTop; i += 1) {
+        let worstIdx = -1;
+        for (let j = top.length - 1; j >= 0; j -= 1) {
+          if (!isRare(top[j])) { worstIdx = j; break; }
+        }
+        if (worstIdx === -1) break; // every slot is already rare
+        top[worstIdx] = extraRare[i];
+        rareCount += 1;
+      }
+      top.sort((a, b) => b.score - a.score || a.order - b.order);
+    }
+  }
+
+  if (weights.diversityCheckCount <= limit) {
+    // Category diversity: per spec, only the literal "top N are ALL the
+    // same category" case forces a swap-in — a mixed-but-object-heavy top
+    // isn't touched. No re-sort-by-score after swapping: the whole point is
+    // to plant a lower-scored place/time word inside the head window, and a
+    // final score sort would immediately sink it back out again.
+    let head = top.slice(0, weights.diversityCheckCount);
+    const headCategories = new Set(head.map((e) => e.category));
+    if (headCategories.size === 1) {
+      for (const wantCategory of weights.diversityCategories) {
+        if (headCategories.has(wantCategory)) continue;
+        const headKoSet = new Set(head.map((e) => e.ko));
+        // Prefer a same-category entry already ranked just outside the head
+        // (promote its position); otherwise pull the best-scored one from
+        // the full ranking that isn't already in the head.
+        const candidate =
+          top.find((e) => e.category === wantCategory && !headKoSet.has(e.ko)) ||
+          sorted.find((e) => e.category === wantCategory && !headKoSet.has(e.ko));
+        if (!candidate) continue;
+        let swapIdx = head.findIndex((e) => !isRare(e));
+        if (swapIdx === -1) swapIdx = weights.diversityCheckCount - 1;
+        const candidateIdx = top.indexOf(candidate);
+        if (candidateIdx !== -1) {
+          [top[swapIdx], top[candidateIdx]] = [top[candidateIdx], top[swapIdx]];
+        } else {
+          top[swapIdx] = candidate; // pulled from below the `limit` cutoff — the displaced entry simply drops out
+        }
+        head = top.slice(0, weights.diversityCheckCount);
+        headCategories.add(wantCategory);
+      }
+    }
+  }
+
+  return top.map((e) => e.ko);
+}
+
+function rankSceneNouns(termInfo, weights) {
+  return rankSceneTerms(termInfo, weights, weights.topCount);
+}
+
+// A "scene noun" sets a scene — a thing, a place, a moment, someone present.
+// Verbs (action) and modifiers (description/quantity) score just as high
+// under pure rarity weighting (many are rare too), but "접다"/"기억하다"
+// filling a noun-shaped template slot reads as broken, not vivid. This
+// mirrors generate/youtubeSet.js's existing object/place-only filter for the
+// {sceneNoun1-3} template slots, widened to also allow time/person so the
+// set-level list (which isn't slotted into a fixed sentence shape) can still
+// surface something like "가을"/"가족" when that's genuinely the set's most
+// distinctive vocabulary.
+const SCENE_NOUN_CATEGORIES = new Set(['object', 'place', 'time', 'person']);
+
 /**
  * Converts a validated setpack object into the S1-ready normalized shape.
  * @param {object} data - already validated via validateSetPack().
@@ -186,16 +303,28 @@ export function normalizeSetPack(data, initialWarnings = []) {
   const emotionPhraseResults = []; // {resolved: boolean} for coverage.emotions
   let titleLocalizedFallbackCount = 0;
   const upstreamWarnings = []; // song.warnings from Suno Weaver Studio itself (v2 field) — merged in with a "[상류]" prefix below
+  const sceneTermInfo = new Map(); // TASK-S8: ko -> {songs: Set<trackNo>, category, order} — feeds rankSceneNouns()
 
   const scanSources = [
     { name: 'timewords', lexicon: lex.timewords },
     { name: 'nouns', lexicon: lex.nouns },
   ];
 
+  function trackSceneTerms(matchedTerms, trackNo) {
+    for (const m of matchedTerms) {
+      if (!SCENE_NOUN_CATEGORIES.has(m.category)) continue;
+      if (!sceneTermInfo.has(m.ko)) {
+        sceneTermInfo.set(m.ko, { songs: new Set(), category: m.category ?? null, order: sceneTermInfo.size });
+      }
+      sceneTermInfo.get(m.ko).songs.add(trackNo);
+    }
+  }
+
   const normalizedSongs = data.songs.map((song) => {
     const { matchedTerms, unknownTerms } = scanTextMulti(song.listenerSituation, scanSources, stopwords);
     allMatchedTerms.push(...matchedTerms);
     allUnknownTerms.push(...unknownTerms);
+    trackSceneTerms(matchedTerms, song.trackNo);
     for (const term of unknownTerms) {
       unknownTermEntries.push({
         term,
@@ -217,6 +346,7 @@ export function normalizeSetPack(data, initialWarnings = []) {
       lyricThemeUnknownTerms = themeScan.unknownTerms;
       allMatchedTerms.push(...lyricThemeMatchedTerms);
       allUnknownTerms.push(...lyricThemeUnknownTerms);
+      trackSceneTerms(lyricThemeMatchedTerms, song.trackNo);
       for (const term of lyricThemeUnknownTerms) {
         unknownTermEntries.push({
           term,
@@ -316,7 +446,8 @@ export function normalizeSetPack(data, initialWarnings = []) {
     normalizedSongs.map((s) => (s.emotionArc.parsed ? s.emotionArc.to.ko : null)),
     3
   );
-  const sceneNouns = topByFrequency(allMatchedTerms.map((m) => m.ko), 12);
+  const sceneNounWeights = loadSceneNounWeights();
+  const sceneNouns = rankSceneNouns(sceneTermInfo, sceneNounWeights);
 
   const coverageNouns = computeSourceCoverage(allMatchedTerms, allUnknownTerms, 'nouns');
   const emotionsCoverage =

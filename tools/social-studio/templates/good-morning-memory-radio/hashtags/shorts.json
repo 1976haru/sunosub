@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "shorts",
+  "_comment": "TASK-S8 — Shorts/TikTok hashtags (platformLimits.tiktok.hashtagMax=5, per-song via rotatedSlice salted by trackNo). Short-form-specific tags, distinct from the other four pools so the same 5 tags don't echo youtube.json's set-level hashtags.",
+  "hashtags": [
+    "#shorts", "#쇼츠", "#틱톡", "#감성쇼츠", "#추억쇼츠",
+    "#7080쇼츠", "#힐링쇼츠", "#노래쇼츠", "#플레이리스트쇼츠", "#감성숏폼",
+    "#옛날노래쇼츠", "#음악쇼츠"
+  ]
+}

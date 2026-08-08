@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "channelId": "good-morning-memory-radio",
+  "platform": "youtube",
+  "_comment": "TASK-S8 — YouTube description/overlay hashtags (platformLimits.youtube.hashtagCount=15 picked per set via rotatedSlice). Brand/mood hashtags, not search phrases — see youtube-tags.json for the search-term pool. Kept separate from instagram.json/shorts.json so cross-platform overlap stays low (R9).",
+  "hashtags": [
+    "#추억라디오", "#굿모닝추억라디오", "#감성라디오", "#7080", "#7080세대",
+    "#옛날노래", "#그시절감성", "#추억소환", "#힐링음악", "#잔잔한음악",
+    "#카페음악", "#커피타임", "#향수", "#세대공감", "#어른들의음악",
+    "#노래모음", "#감성플레이리스트", "#아침음악", "#출근길음악", "#잔잔한아침",
+    "#옛날감성", "#라디오스타일", "#7080추억", "#온기가득한음악", "#마음의쉼표",
+    "#잔잔한하루", "#새벽감성", "#레트로", "#추억팝송", "#감성충전",
+    "#goodmorningplaylist", "#nostalgicmusic", "#retrovibes", "#morningmusic", "#healingmusic",
+    "#koreanoldies", "#throwbacksongs"
+  ]
+}

@@ -9,6 +9,9 @@ import {
   normalizeSetPack,
   resolveChannelLanguage,
   runSetPackPipeline,
+  scoreSceneTerms,
+  rankSceneTerms,
+  loadSceneNounWeights,
   SetPackValidationError,
 } from '../parse/setPackLoader.js';
 
@@ -16,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'sample-setpack.json');
 const FIXTURE_V2_PATH = path.join(__dirname, 'fixtures', 'sample-setpack-v2.json');
 const NOUNS_PATH = path.join(__dirname, '..', 'data', 'lexicon', 'ko', 'nouns.json');
+const SCENE_WEIGHTS_PATH = path.join(__dirname, '..', 'data', 'sceneNounWeights.json');
 
 function baseValidSong(overrides = {}) {
   return {
@@ -343,4 +347,105 @@ test('S7: v2-only fields (distinctChoice, genreText, pov, qualityScore) pass thr
   assert.equal(n1.songs[0].genreText, null);
   assert.equal(n1.songs[0].pov, null);
   assert.equal(n1.songs[0].qualityScore, null);
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S8 작업 A — sceneNouns 희소성 가중. 빈도순이면 18곡 전부에 등장하는
+// 흔한 단어(table/window/road)가 상위를 차지한다 — 그 세트만의 장면을 만드는
+// 건 1~3곡에만 나오는 단어다. See data/sceneNounWeights.json.
+// ---------------------------------------------------------------------------
+
+function songCountsFor(normalized, ko) {
+  // Recomputes "몇 곡에 등장했는가" independently of setPackLoader's internal
+  // termInfo map, straight from the per-song matchedTerms already on the
+  // normalized songs — so this test doesn't just re-assert the
+  // implementation's own bookkeeping.
+  const songs = new Set();
+  for (const song of normalized.songs) {
+    const sources = [song.listenerSituation.matchedTerms, song.lyricThemeText?.matchedTerms || []];
+    for (const matched of sources) {
+      if (matched.some((m) => m.ko === ko)) songs.add(song.trackNo);
+    }
+  }
+  return songs.size;
+}
+
+test('S8 condition 1: set.sceneNouns top12 has at least 6 words that appear in <= 3 songs (v2 fixture, 18 songs)', () => {
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized } = normalizeSetPack(v2, []);
+  const top12 = normalized.set.sceneNouns;
+  assert.ok(top12.length > 0, 'expected a non-empty sceneNouns list');
+  const rareCount = top12.filter((ko) => songCountsFor(normalized, ko) <= 3).length;
+  assert.ok(rareCount >= 6, `expected >=6 of the top12 to appear in <=3 songs, got ${rareCount}. top12: ${JSON.stringify(top12)}`);
+});
+
+test('S8 condition 3: at least one sceneNoun outside {table/window/road}\'s Korean translations appears in the top12 (v2 fixture)', () => {
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized } = normalizeSetPack(v2, []);
+  const common = new Set(['식탁', '창문', '길']); // ko for table/window/road in data/lexicon/ko/nouns.json
+  const hasSomethingElse = normalized.set.sceneNouns.some((ko) => !common.has(ko));
+  assert.ok(hasSomethingElse, `top12 was entirely table/window/road: ${JSON.stringify(normalized.set.sceneNouns)}`);
+});
+
+test('S8: rankSceneTerms guarantees minRareInTop rare words when enough rare candidates exist', () => {
+  const weights = loadSceneNounWeights();
+  const termInfo = new Map();
+  // 3 "common" words (appear in 15 of 18 songs) + 8 "rare" words (1 song each) — a
+  // plain frequency sort would put all 3 common words ahead of every rare one.
+  for (let i = 0; i < 3; i += 1) {
+    termInfo.set(`common${i}`, { songs: new Set(Array.from({ length: 15 }, (_, k) => k + 1)), category: 'object', order: i });
+  }
+  for (let i = 0; i < 8; i += 1) {
+    termInfo.set(`rare${i}`, { songs: new Set([i + 1]), category: 'object', order: 3 + i });
+  }
+  const top = rankSceneTerms(termInfo, weights, 12);
+  const rareInTop = top.filter((ko) => ko.startsWith('rare')).length;
+  assert.ok(rareInTop >= weights.minRareInTop, `expected >= ${weights.minRareInTop} rare words in top, got ${rareInTop}: ${JSON.stringify(top)}`);
+});
+
+test('S8: rankSceneTerms pulls in place/time categories when the top diversityCheckCount would otherwise be all "object"', () => {
+  const weights = loadSceneNounWeights();
+  const termInfo = new Map();
+  // 8 rare "object" words (score-dominant) + 1 rare "place" + 1 rare "time",
+  // both scored lower (more songs) so they wouldn't naturally make the head
+  // without the diversity rule.
+  for (let i = 0; i < 8; i += 1) {
+    termInfo.set(`obj${i}`, { songs: new Set([i + 1]), category: 'object', order: i });
+  }
+  termInfo.set('aPlace', { songs: new Set([1, 2, 3, 4, 5]), category: 'place', order: 8 });
+  termInfo.set('aTime', { songs: new Set([1, 2, 3, 4, 5]), category: 'time', order: 9 });
+
+  const top = rankSceneTerms(termInfo, weights, 12);
+  const head = top.slice(0, weights.diversityCheckCount);
+  const headCategories = new Set(
+    [...termInfo.entries()].filter(([ko]) => head.includes(ko)).map(([, info]) => info.category)
+  );
+  assert.ok(headCategories.has('place') || headCategories.has('time'), `expected place/time pulled into the head, got: ${JSON.stringify(head)}`);
+});
+
+test('S8 condition 13: an extreme sceneNounWeights.json change actually flips sceneNouns order (proves the weights aren\'t hardcoded)', () => {
+  const backup = fs.readFileSync(SCENE_WEIGHTS_PATH, 'utf8');
+  try {
+    const v2 = readSetPackFile(FIXTURE_V2_PATH);
+    const { normalized: normalBefore } = normalizeSetPack(v2, []);
+    const before = normalBefore.set.sceneNouns.slice(0, 6);
+
+    const weights = JSON.parse(backup);
+    // Flip the weighting: reward COMMON words instead of rare ones.
+    const flipped = { ...weights, rareWeight: 0.1, commonWeight: 5, midWeight: 1 };
+    fs.writeFileSync(SCENE_WEIGHTS_PATH, JSON.stringify(flipped, null, 2));
+
+    const { normalized: normalAfter } = normalizeSetPack(readSetPackFile(FIXTURE_V2_PATH), []);
+    const after = normalAfter.set.sceneNouns.slice(0, 6);
+
+    assert.notDeepEqual(before, after, `expected sceneNouns order to change after flipping the weights, both were: ${JSON.stringify(before)}`);
+  } finally {
+    fs.writeFileSync(SCENE_WEIGHTS_PATH, backup);
+  }
+});
+
+test('S8: emptying nouns.json still leaves scoreSceneTerms with nothing to rank (sceneNouns only ever contains dictionary-matched words)', () => {
+  const weights = loadSceneNounWeights();
+  const entries = scoreSceneTerms(new Map(), weights);
+  assert.deepEqual(entries, []);
 });

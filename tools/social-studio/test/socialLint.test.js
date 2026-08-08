@@ -10,11 +10,14 @@ import * as platformRules from '../lint/rules/platformRules.js';
 import * as bannedPhrasesRule from '../lint/rules/bannedPhrases.js';
 import * as postingCadence from '../lint/rules/postingCadence.js';
 import * as wordRepetition from '../lint/rules/wordRepetition.js';
+import * as intraSetRepetition from '../lint/rules/intraSetRepetition.js';
+import * as crossPlatformHashtagOverlap from '../lint/rules/crossPlatformHashtagOverlap.js';
 import { loadThresholds, runSocialLint, runSocialLintAndSave, runLintWithRegeneration } from '../lint/socialLint.js';
 import { appendEntry, loadHistory } from '../store/lintHistory.js';
 import * as historyStore from '../store/history.js';
 import { runSetPackPipeline } from '../parse/setPackLoader.js';
 import { runTextPackPipeline } from '../generate/textPack.js';
+import { buildSetSlots } from '../generate/youtubeSet.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -45,15 +48,19 @@ function baselineTextpack(overrides = {}) {
     youtube: {
       titles: ['평범한 첫 제목입니다', '평범한 둘째 제목입니다', '평범한 셋째 제목입니다'],
       description: '오늘의 플레이리스트를 소개합니다. 편안한 시간 보내세요.',
-      hashtags: ['#태그1', '#태그2', '#태그3'],
-      tags: ['태그1', '태그2', '태그3'],
+      // TASK-S8: kept intentionally distinct per platform (no shared strings)
+      // so the new R9 (crossPlatformHashtagOverlap) rule doesn't spuriously
+      // trip on the baseline itself — R9 fixture below overrides these to
+      // actually test the overlap case.
+      hashtags: ['#유튜브태그1', '#유튜브태그2', '#유튜브태그3'],
+      tags: ['유튜브키워드1', '유튜브키워드2', '유튜브키워드3'],
       pinnedComment: '댓글로 의견을 남겨주세요.',
     },
-    shorts: [{ trackNo: 1, title: 'Song One', titleKo: '노래하나', description: 'desc', descriptionKo: '짧은 곡 설명입니다', tagsEn: [], hashtags: ['#태그1'] }],
-    instagram: { caption: '오늘의 사진을 공유합니다.', hashtags: ['#태그1', '#태그2'], firstComment: '#태그1 #태그2' },
+    shorts: [{ trackNo: 1, title: 'Song One', titleKo: '노래하나', description: 'desc', descriptionKo: '짧은 곡 설명입니다', tagsEn: [], hashtags: ['#쇼츠태그1'] }],
+    instagram: { caption: '오늘의 사진을 공유합니다.', hashtags: ['#인스타태그1', '#인스타태그2'], firstComment: '#인스타태그1 #인스타태그2' },
     x: { main: '오늘의 소식을 전합니다.', thread: [], lyricQuote: null },
     facebook: { body: '페이스북에 오늘의 이야기를 남깁니다.' },
-    naver: { title: '네이버 제목입니다', bodyHtml: '<p>본문입니다</p>', tags: ['태그1'] },
+    naver: { title: '네이버 제목입니다', bodyHtml: '<p>본문입니다</p>', tags: ['네이버키워드1'] },
     hatena: { title: null, body: null, category: null, warnings: [] },
     warnings: [],
     errors: [],
@@ -61,7 +68,7 @@ function baselineTextpack(overrides = {}) {
   };
 }
 
-/** Runs all 7 rules the same way lint/socialLint.js does, but with injectable context — this is what makes each fixture test self-contained (no disk state needed). */
+/** Runs all 9 rules the same way lint/socialLint.js does, but with injectable context — this is what makes each fixture test self-contained (no disk state needed). */
 function runAllRules(textpack, ctxOverrides = {}) {
   const thresholds = ctxOverrides.thresholds || loadJson(THRESHOLDS_PATH);
   const platformLimits = ctxOverrides.platformLimits || loadJson(LIMITS_PATH);
@@ -71,6 +78,7 @@ function runAllRules(textpack, ctxOverrides = {}) {
   const candidates = ctxOverrides.candidates || [];
   const recentEntries = ctxOverrides.recentEntries || [];
   const poolSizes = ctxOverrides.poolSizes || {};
+  const normalized = ctxOverrides.normalized ?? null;
 
   const results = [
     crossChannel.check(textpack, { threshold: thresholds.R1_crossChannelSimilarity, candidates }),
@@ -80,6 +88,8 @@ function runAllRules(textpack, ctxOverrides = {}) {
     bannedPhrasesRule.check(textpack, { phrases }),
     postingCadence.check(textpack, { maxPostsPer24h: thresholds.R6_maxPostsPer24h, currentDate, recentEntries }),
     wordRepetition.check(textpack, { maxNounRepeat: thresholds.R7_maxNounRepeat }),
+    intraSetRepetition.check(textpack, { normalized, maxAcrossPlatforms: thresholds.R8_maxSceneNounAcrossPlatforms }),
+    crossPlatformHashtagOverlap.check(textpack, { threshold: thresholds.R9_crossPlatformHashtagOverlap }),
   ];
   return results.flatMap((r) => r.violations);
 }
@@ -183,6 +193,66 @@ test('R7 does not false-positive on HTML tags or on unrelated English words shar
   });
   const violations = runAllRules(current);
   assert.deepEqual(violations.filter((v) => v.rule === 'R7-wordRepetition'), []);
+});
+
+// --- TASK-S8: R8 (intraSetRepetition) and R9 (crossPlatformHashtagOverlap) ---
+
+test('R8 fixture: the same sceneNoun deliberately placed in all 4 tracked platform items is caught ONLY by R8, as warn (completion condition #4)', () => {
+  const { normalized } = runSetPackPipeline(FIXTURE_PATH);
+  const { sceneNoun1 } = buildSetSlots(normalized, {});
+  assert.ok(sceneNoun1, 'fixture must actually produce a sceneNoun1 for this test to mean anything');
+
+  const current = baselineTextpack({
+    naver: { title: 't', bodyHtml: `<p>${sceneNoun1}이 떠오르는 노래입니다</p>`, tags: [] },
+    facebook: { body: `오늘은 ${sceneNoun1}이 생각나는 노래를 준비했습니다.` },
+    x: { main: `${sceneNoun1}이 떠오르는 밤입니다.`, thread: [`${sceneNoun1}이 함께하는 시간이에요.`], lyricQuote: null },
+  });
+  const violations = runAllRules(current, { normalized });
+
+  assert.ok(onlyRule(violations, 'R8-intraSetRepetition'), `expected only R8 violations, got: ${JSON.stringify(violations.map((v) => v.rule))}`);
+  assert.ok(violations.length > 0);
+  for (const v of violations) {
+    assert.equal(v.severity, 'warn');
+    assert.equal(v.regenerate, true, 'R8 must opt into regeneration even at warn severity');
+  }
+  const paths = new Set(violations.map((v) => v.path));
+  for (const p of ['naver.bodyHtml', 'facebook.body', 'x.main', 'x.thread']) assert.ok(paths.has(p), `expected a violation on ${p}`);
+  console.log('[R8 fixture message]', violations[0].message);
+});
+
+test('R8: without a normalized fixture (no sceneNouns known), nothing is checked — never throws', () => {
+  const current = baselineTextpack({
+    naver: { title: 't', bodyHtml: '<p>커피가 떠오르는 노래입니다</p>', tags: [] },
+    facebook: { body: '커피가 생각나는 노래를 준비했습니다.' },
+    x: { main: '커피가 떠오르는 밤입니다.', thread: ['커피가 함께하는 시간이에요.'], lyricQuote: null },
+  });
+  const violations = intraSetRepetition.check(current, { normalized: null, maxAcrossPlatforms: 2 });
+  assert.deepEqual(violations.violations, []);
+});
+
+test('R9 fixture: youtube hashtags and instagram hashtags sharing over 30% overlap is caught ONLY by R9, as warn', () => {
+  const current = baselineTextpack({
+    youtube: {
+      ...baselineTextpack().youtube,
+      hashtags: ['#같은태그1', '#같은태그2', '#같은태그3', '#다른태그4', '#다른태그5'],
+    },
+    instagram: {
+      caption: '오늘의 사진을 공유합니다.',
+      hashtags: ['#같은태그1', '#같은태그2', '#같은태그3'],
+      firstComment: '#같은태그1 #같은태그2 #같은태그3',
+    },
+  });
+  const violations = runAllRules(current);
+
+  assert.ok(onlyRule(violations, 'R9-crossPlatformHashtagOverlap'), `expected only R9 violations, got: ${JSON.stringify(violations.map((v) => v.rule))}`);
+  console.log('[R9 fixture message]', violations[0].message);
+  assert.equal(violations[0].severity, 'warn');
+  assert.ok(violations[0].value > 0.30);
+});
+
+test('R9: pools with no overlap at all produce no violation', () => {
+  const violations = crossPlatformHashtagOverlap.check(baselineTextpack(), { threshold: 0.30 });
+  assert.deepEqual(violations.violations, []);
 });
 
 // --- completion condition 4: threshold sensitivity ---
