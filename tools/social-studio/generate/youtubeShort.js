@@ -10,6 +10,7 @@
 
 import { loadTemplateFile, selectTemplateWithinLimit } from './slotFiller.js';
 import { rotatedSlice } from './rotation.js';
+import { formatTitleWithOriginal } from './songListFormat.js';
 
 const DEFAULT_HASHTAG_COUNT = 5; // within the spec's "3~5개" range and equal to platformLimits.tiktok.hashtagMax
 
@@ -18,6 +19,10 @@ function buildSongSlots(song, setSlots) {
     ...setSlots,
     titleKo: song.titleLocalized,
     titleEn: song.title,
+    // TASK-S9: "{titleKo} ({titleEn})" duplicated the bracket when
+    // titleLocalized had fallen back to title (TASK-S7) — this slot is
+    // fallback-aware, see shorts.json's sh-t-004.
+    titleWithOriginal: formatTitleWithOriginal(song),
     emotionFromKo: song.emotionArc.parsed ? song.emotionArc.from.ko ?? '' : '',
     emotionToKo: song.emotionArc.parsed ? song.emotionArc.to.ko ?? '' : '',
   };

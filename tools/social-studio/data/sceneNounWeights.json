@@ -9,5 +9,7 @@
   "topCount": 12,
   "minRareInTop": 6,
   "diversityCheckCount": 6,
-  "diversityCategories": ["place", "time"]
+  "diversityCategories": ["place", "time"],
+  "_excludeCategoriesComment": "TASK-S9 — sceneNoun 후보에서 뺄 카테고리(data/lexicon/ko/nouns.json과 ja 대응 파일의 category 값, timewords.json의 season/weekday/duration/month/relative 포함). 'body'(어깨/손/머리카락 등 신체)와 'abstract'(용기/순간/시간 등 추상 개념)는 장면을 만들지 못해서 뺀다. object/place/time/person/food는 후보로 남는다 — object를 통째로 빼지 않는다(커피/라디오/주전자는 유효한 장면 재료). 이 목록에서 'body'를 지우면 '어깨'가 다시 후보에 등장해야 한다(완료조건 9) — setPackLoader.js는 이 배열만 읽고, 카테고리 이름을 코드에 쓰지 않는다.",
+  "excludeCategories": ["action", "description", "quantity", "body", "abstract", "season", "weekday", "duration", "month", "relative"]
 }

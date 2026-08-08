@@ -108,6 +108,17 @@ export function loadTextpack(setName) {
   return readJsonIfExists(path.join(getOutDir(setName), 'textpack.json'), null);
 }
 
+/**
+ * TASK-S9 작업 D — normalized.json은 textpack.json과 같은 out/{setName}/
+ * 아래에 있다(S0가 씀). set.warnings(예: titleLocalized 폴백 [중요] 경고)는
+ * textpack.warnings와 별개 배열이라 화면에 보여주려면 따로 읽어야 한다.
+ * 파일이 없으면(예: 예전 세트) 빈 배열로 — 화면이 죽으면 안 된다.
+ */
+export function loadSetWarnings(setName) {
+  const normalized = readJsonIfExists(path.join(getOutDir(setName), 'normalized.json'), null);
+  return normalized?.set?.warnings || [];
+}
+
 export function loadEdits(setName) {
   return readJsonIfExists(path.join(getOutDir(setName), 'textpack.edited.json'), { originalHash: null, overrides: {} });
 }
@@ -321,6 +332,7 @@ export function buildDisplayItems(setName) {
     checkedCount: items.filter((i) => i.checked).length,
     originalChanged,
     warnings: textpack.warnings || [],
+    setWarnings: loadSetWarnings(setName), // TASK-S9: separate from textpack.warnings — see loadSetWarnings() doc comment
   };
 }
 

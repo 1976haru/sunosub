@@ -51,6 +51,9 @@
     margin-top: 10px; padding: 8px 12px; background: #fff4e0; border: 1px solid #f0c674;
     border-radius: 4px; font-size: 13px;
   }
+  .banner.important { background: #fbe4e4; border-color: var(--over); color: #7a1f1f; font-weight: 600; }
+  .banner-list { margin: 0; padding-left: 18px; }
+  .banner-list li { margin: 2px 0; }
   main { max-width: 920px; margin: 0 auto; padding: 20px 24px 80px; }
   section.pack-section {
     background: var(--card); border: 1px solid var(--border); border-radius: 6px;
@@ -216,6 +219,43 @@
       div.className = 'banner';
       div.textContent = '원본이 갱신되었습니다(S1이 다시 실행됨). 편집한 항목은 그대로 유지됩니다 — 필요하면 항목별로 [원본으로] 버튼을 눌러 되돌리세요.';
       banner.appendChild(div);
+    }
+    renderWarnings(banner, (data.setWarnings || []).concat(data.warnings || []));
+  }
+
+  // TASK-S9 작업 D — set.warnings(예: titleLocalized 폴백 [중요] 경고)와
+  // textpack.warnings를 합쳐서 보여준다. 경고가 없으면 영역 자체를 만들지
+  // 않는다(완료조건: "경고가 0건이면 영역 자체를 숨긴다"). [중요] 접두가
+  // 붙은 항목은 붉은 배경으로 강조한다.
+  function renderWarnings(container, warnings) {
+    if (!warnings.length) return;
+    var important = warnings.filter(function (w) { return w.indexOf('[중요]') === 0; });
+    var normal = warnings.filter(function (w) { return w.indexOf('[중요]') !== 0; });
+    if (important.length) {
+      var impDiv = document.createElement('div');
+      impDiv.className = 'banner important';
+      var impList = document.createElement('ul');
+      impList.className = 'banner-list';
+      important.forEach(function (w) {
+        var li = document.createElement('li');
+        li.textContent = w;
+        impList.appendChild(li);
+      });
+      impDiv.appendChild(impList);
+      container.appendChild(impDiv);
+    }
+    if (normal.length) {
+      var div = document.createElement('div');
+      div.className = 'banner';
+      var list = document.createElement('ul');
+      list.className = 'banner-list';
+      normal.forEach(function (w) {
+        var li = document.createElement('li');
+        li.textContent = w;
+        list.appendChild(li);
+      });
+      div.appendChild(list);
+      container.appendChild(div);
     }
   }
 

@@ -6,12 +6,13 @@ import { loadTemplateFile, selectTemplateWithinLimit, TemplatePoolError } from '
 import { rotatedSlice } from './rotation.js';
 import { buildSetSlots } from './youtubeSet.js';
 import { loadLexicon } from '../parse/lexicon.js';
+import { formatSongListLine } from './songListFormat.js';
 
 const IMAGE_MARKER = '<!-- IMAGE:cover -->';
 const PERSONAL_COMMENT_MARKER = '<!-- 여기에 직접 한 줄 -->';
 
 function buildSongListHtml(songs) {
-  const items = songs.map((s) => `<li>${s.trackNo}. ${s.titleLocalized} (${s.title})</li>`).join('\n');
+  const items = songs.map((s) => `<li>${formatSongListLine(s)}</li>`).join('\n');
   return `<ul>\n${items}\n</ul>`;
 }
 

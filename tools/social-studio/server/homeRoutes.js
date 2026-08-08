@@ -99,6 +99,7 @@ router.post('/api/generate', (req, res, next) => {
       unknownTerms: (report.unknownTerms || []).length,
       unmatchedEmotionArcs: (report.unmatchedEmotionArcs || []).length,
       warnings: textpack.warnings || [],
+      setWarnings: normalized.set.warnings || [], // TASK-S9: e.g. titleLocalized 폴백 [중요] 경고 — textpack.warnings와 별개 배열
       errors: textpack.errors || [],
       outDir,
       packUrl: `/social-studio/pack/${encodeURIComponent(normalized.set.setName)}`,

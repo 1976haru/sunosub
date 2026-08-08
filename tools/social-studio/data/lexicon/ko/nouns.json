@@ -43,7 +43,7 @@
     },
     "breakfast": {
       "ko": "아침 식사",
-      "category": "object"
+      "category": "food"
     },
     "breathe": {
       "ko": "숨쉬다",
@@ -63,7 +63,7 @@
     },
     "coffee": {
       "ko": "커피",
-      "category": "object"
+      "category": "food"
     },
     "cold": {
       "ko": "차가운",
@@ -71,11 +71,11 @@
     },
     "color": {
       "ko": "색깔",
-      "category": "object"
+      "category": "abstract"
     },
     "conversation": {
       "ko": "대화",
-      "category": "object"
+      "category": "abstract"
     },
     "corner": {
       "ko": "모퉁이",
@@ -83,7 +83,7 @@
     },
     "courage": {
       "ko": "용기",
-      "category": "object"
+      "category": "abstract"
     },
     "cross": {
       "ko": "가로지르다",
@@ -115,7 +115,7 @@
     },
     "dinner": {
       "ko": "저녁 식사",
-      "category": "object"
+      "category": "food"
     },
     "dishes": {
       "ko": "그릇들",
@@ -195,7 +195,7 @@
     },
     "hair": {
       "ko": "머리카락",
-      "category": "object"
+      "category": "body"
     },
     "half": {
       "ko": "반쯤",
@@ -207,7 +207,7 @@
     },
     "hand": {
       "ko": "손",
-      "category": "object"
+      "category": "body"
     },
     "happen": {
       "ko": "일어나다",
@@ -215,7 +215,7 @@
     },
     "heat": {
       "ko": "더위",
-      "category": "object"
+      "category": "abstract"
     },
     "highway": {
       "ko": "고속도로",
@@ -255,7 +255,7 @@
     },
     "knee": {
       "ko": "무릎",
-      "category": "object"
+      "category": "body"
     },
     "left": {
       "ko": "남겨진",
@@ -311,7 +311,7 @@
     },
     "moment": {
       "ko": "순간",
-      "category": "object"
+      "category": "abstract"
     },
     "move": {
       "ko": "움직이다",
@@ -319,7 +319,7 @@
     },
     "music": {
       "ko": "음악",
-      "category": "object"
+      "category": "abstract"
     },
     "narrow": {
       "ko": "좁아지다",
@@ -335,7 +335,7 @@
     },
     "nerve": {
       "ko": "긴장감",
-      "category": "object"
+      "category": "abstract"
     },
     "no": {
       "ko": "없는",
@@ -383,7 +383,7 @@
     },
     "plan": {
       "ko": "계획",
-      "category": "object"
+      "category": "abstract"
     },
     "platform": {
       "ko": "승강장",
@@ -499,7 +499,7 @@
     },
     "shoulder": {
       "ko": "어깨",
-      "category": "object"
+      "category": "body"
     },
     "shy": {
       "ko": "수줍은",
@@ -539,7 +539,7 @@
     },
     "song": {
       "ko": "노래",
-      "category": "object"
+      "category": "abstract"
     },
     "spin": {
       "ko": "빙그르르 돌다",
@@ -559,7 +559,7 @@
     },
     "step": {
       "ko": "걸음",
-      "category": "object"
+      "category": "abstract"
     },
     "stop": {
       "ko": "멈추다",
@@ -567,7 +567,7 @@
     },
     "stories": {
       "ko": "이야기들",
-      "category": "object"
+      "category": "abstract"
     },
     "street": {
       "ko": "거리",
@@ -607,7 +607,7 @@
     },
     "time": {
       "ko": "시간",
-      "category": "object"
+      "category": "abstract"
     },
     "town": {
       "ko": "마을",
@@ -651,7 +651,7 @@
     },
     "whistle": {
       "ko": "휘파람 소리",
-      "category": "object"
+      "category": "abstract"
     },
     "whole": {
       "ko": "온",
@@ -663,7 +663,7 @@
     },
     "work": {
       "ko": "일",
-      "category": "object"
+      "category": "abstract"
     },
     "written": {
       "ko": "쓰여진",

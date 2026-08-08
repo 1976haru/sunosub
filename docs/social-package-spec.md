@@ -447,3 +447,68 @@ warnings에 남는 것을 확인했다.
 ("구독과 알림", "알림 설정" 등)이 목록에 없었을 뿐이다. R5 자체(`lint/rules/
 bannedPhrases.js`)는 이미 `youtube.pinnedComment`를 포함해 전체 textpack을 스캔하고
 있었다 — 검사 로직은 멀쩡했고 데이터만 비어 있었다.
+
+## 16. TASK-S9 — 배선 커밋 누락 및 장면 명사 품질 보정
+
+### 작업 A — 커밋 누락
+
+`tools/social-studio/server/homeRoutes.js`, `tools/social-studio/web/home.html`,
+그리고 이 둘을 셸에 연결하는 `server.js`/`public/index.html`의 변경분은 TASK-S7 때
+이미 작성됐지만 **그 이후 어느 S7/S8 커밋에도 포함되지 않았다** — 매 커밋이
+`tools/social-studio/{parse,generate,lint,templates,data,test}/`만 스테이징했기
+때문이다(S7·S8 작업 지시문 자체가 "S8-스코프 파일만 커밋"이라고 명시했고, 이 네 파일은
+그 스코프 밖에 있다고 착각한 것으로 보인다). 결과: 푸시된 브랜치를 새로 클론하면 소셜
+탭 자체가 없고 `POST /social-studio/api/generate`가 404. 별도 커밋(`fix: commit
+missing social-studio shell wiring`)으로 네 파일만 스테이징해 커밋했다 — 로컬에서
+서버를 실제로 띄우고 `curl`로 탭 마크업과 엔드포인트 상태 코드를 확인한 뒤 커밋했다.
+
+### 작업 B — sceneNouns 카테고리 재분류
+
+`data/lexicon/ko/nouns.json`의 `object`(57개)가 신체 부위(`shoulder`→어깨)와 추상
+개념(`courage`→용기, `time`→시간)까지 뒤섞인 잡동사니 카테고리였다. `body`/`abstract`/
+`food` 세 카테고리를 추가해 21개를 재분류했다(신체 4, 추상 14, 음식 3) — `object`
+자체는 36개가 남아 여전히 커피/라디오/주전자 같은 유효한 장면 재료를 포함한다.
+
+**제외 로직을 config로 옮긴 것이 이번 작업의 핵심이다.** TASK-S8에서 `sceneNouns`
+후보를 고르던 기준은 `setPackLoader.js`에 하드코딩된 `SCENE_NOUN_CATEGORIES =
+new Set(['object','place','time','person'])`였다 — 허용 목록(allowlist) 방식이라
+`body`/`abstract` 값을 새로 만들어도 애초에 그 Set에 없으니 자동으로 제외되긴
+했겠지만, 그건 우연이지 지시문이 요구한 "제외 목록은 config에 둔다"가 아니다.
+`data/sceneNounWeights.json`에 `excludeCategories` 배열(action, description,
+quantity, body, abstract, season, weekday, duration, month, relative)을 추가하고
+`isSceneNounCategory(category, weights)`를 그 배열만 참조하도록 새로 만들었다.
+완료조건 9번("`excludeCategories`에서 body를 빼면 어깨가 다시 후보에 등장해야
+한다")이 실제로 통과하는지는 코드를 배열 기반으로 바꾸지 않고는 증명할 수 없다 —
+allowlist를 그대로 두고 시험 삼아 "body"를 지워도 아무 일도 안 일어났을 것이다.
+
+같은 카테고리 판정을 `generate/youtubeSet.js`의 `deriveSceneNouns()`도 쓴다 — 이전엔
+`category !== 'object' && category !== 'place'`로 따로 하드코딩되어 있어서
+`{sceneNoun1-3}` 템플릿 슬롯(실제 문장에 들어가는 값)과 `set.sceneNouns`(리포트용
+목록)가 서로 다른 기준으로 걸러지고 있었다. 이번에 하나로 합치면서 `time`/`person`/
+`food` 카테고리도 실제 문장 슬롯에 쓰일 수 있게 넓어졌다 — "아침 식사"가 인스타
+캡션 문장에 실제로 등장하게 된 것은 이 통합 덕분이다(TASK-S9 배경 표의 "동틀 무렵,
+아침 식사는 자연스러운 문장을 만든다" 요구와 직결).
+
+후보가 부족해 top-12를 못 채우는 경우(요구사항 5)는 `description` 카테고리에서
+부족분을 보충하고 `set.warnings`에 남긴다 — 실제 v1/v2 세트는 후보가 충분해서
+이 경로를 타지 않았고(둘 다 12개 이상 확보), 합성 픽스처로만 검증했다.
+
+### 작업 C — 괄호 중복
+
+곡 목록 조립이 `generate/youtubeSet.js`(유튜브 설명문), `generate/blogPost.js`
+(네이버 본문), `generate/youtubeShort.js`(쇼츠 제목, `sh-t-004` 템플릿의
+`{titleKo} ({titleEn})`) 세 곳에 따로 있었다. `generate/songListFormat.js` 하나로
+모았다 — `formatTitleWithOriginal(song)`이 `titleLocalizedFallback` 플래그(또는
+두 값이 우연히 같은 경우까지 대비해 문자열 비교도 병행)를 보고 괄호를 붙일지
+말지 정하고, `formatSongListLine()`/`buildSongListText()`가 그 위에 trackNo
+번호를 붙인다. 쇼츠는 템플릿 자체를 `{titleWithOriginal}` 슬롯 하나로 바꿨다.
+
+### 작업 D — 경고 화면 표시
+
+`set.warnings`(예: `[중요] titleLocalized 누락…`)와 `textpack.warnings`는 서로 다른
+배열이고, `pack.html`(S2 화면)은 **어느 쪽도 렌더링하지 않고 있었다** —
+`store/packState.js`의 `buildDisplayItems()`가 `warnings: textpack.warnings`를
+반환은 했지만 화면 쪽에서 그 필드를 아예 안 썼다. `loadSetWarnings()`를 추가해
+`out/{setName}/normalized.json`에서 `set.warnings`를 읽어 합치고, `[중요]` 접두가
+붙은 항목은 붉은 상자로 분리해 렌더링한다. 홈 화면(`home.html`)도 `/api/generate`
+응답에 `setWarnings` 필드를 추가해 동일하게 처리했다.

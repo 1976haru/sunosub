@@ -9,11 +9,16 @@ import { generateTextPack, renderMarkdown, runTextPackPipeline, checkCaptionComm
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'sample-setpack.json');
+const FIXTURE_V2_PATH = path.join(__dirname, 'fixtures', 'sample-setpack-v2.json');
 const TEMPLATES_CHANNEL_DIR = path.join(__dirname, '..', 'templates', 'good-morning-memory-radio');
 const YOUTUBE_URL = 'https://youtu.be/abcDEF12345';
 
 function loadNormalized() {
   return runSetPackPipeline(FIXTURE_PATH).normalized;
+}
+
+function loadNormalizedV2() {
+  return runSetPackPipeline(FIXTURE_V2_PATH).normalized;
 }
 
 function hash(text) {
@@ -299,6 +304,43 @@ test('S8: buildRegenerateFn returns null (stop retrying) when none of the flagge
   const regenerate = buildRegenerateFn(normalized, { youtubeUrl: YOUTUBE_URL });
   const result = regenerate({}, ['youtube.pinnedComment', 'shorts.1.titleKo']);
   assert.equal(result, null);
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S9 작업 C 완료조건 6·7 — "X (X)" 괄호 중복 없음(v2, 폴백), 정상
+// "한글 (원제)" 형식 유지(v1, titleLocalized 있음). 유튜브 설명문·네이버
+// 본문·인스타 캡션·쇼츠 제목 전부 검사한다.
+// ---------------------------------------------------------------------------
+
+const BRACKET_DUP_PATTERN = /([^()]+) \(\1\)/; // "X (X)" — same text on both sides of the parens
+
+test('S9 condition 6: v2 (titleLocalized fallback) produces no "X (X)" bracket duplication anywhere in youtube.description/naver.bodyHtml/instagram.caption/shorts titles', () => {
+  const normalized = loadNormalizedV2();
+  assert.ok(normalized.songs.every((s) => s.titleLocalizedFallback), 'sanity: v2 fixture should be all-fallback');
+  const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
+
+  const checks = {
+    'youtube.description': textpack.youtube.description,
+    'naver.bodyHtml': textpack.naver.bodyHtml,
+    'instagram.caption': textpack.instagram.caption,
+  };
+  for (const s of textpack.shorts) checks[`shorts.${s.trackNo}.titleKo`] = s.titleKo;
+
+  for (const [field, text] of Object.entries(checks)) {
+    if (!text) continue;
+    assert.ok(!BRACKET_DUP_PATTERN.test(text), `expected no "X (X)" duplication in ${field}, got: ${text}`);
+  }
+});
+
+test('S9 condition 7: v1 (real titleLocalized) still shows "한글 (원제)" format in youtube.description and naver.bodyHtml', () => {
+  const normalized = loadNormalized();
+  assert.ok(normalized.songs.every((s) => !s.titleLocalizedFallback), 'sanity: v1 fixture should have real titleLocalized throughout');
+  const textpack = generateTextPack(normalized, { youtubeUrl: YOUTUBE_URL });
+
+  const song1 = normalized.songs.find((s) => s.trackNo === 1);
+  const expectedLine = `1. ${song1.titleLocalized} (${song1.title})`;
+  assert.ok(textpack.youtube.description.includes(expectedLine), `expected "${expectedLine}" in youtube.description`);
+  assert.ok(textpack.naver.bodyHtml.includes(`<li>${expectedLine}</li>`), `expected "<li>${expectedLine}</li>" in naver.bodyHtml`);
 });
 
 // --- output files ---

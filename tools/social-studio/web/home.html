@@ -57,6 +57,10 @@
   .empty { color: var(--muted); padding: 14px 2px; font-size: 13px; }
   .err { color: var(--err); }
   .warn { color: var(--warn); }
+  .important-box { margin-top: 8px; padding: 8px 12px; background: #fdecea; border: 1px solid var(--err); border-radius: 6px; }
+  .important-box b { color: var(--err); }
+  .important-box ul { margin: 4px 0 0; padding-left: 18px; }
+  .important-box li { font-size: 13px; }
 </style>
 </head>
 <body>
@@ -177,9 +181,19 @@
           if (d.unmatchedEmotionArcs) {
             html += '<div class="warn">emotionArc 파싱 실패 ' + esc(d.unmatchedEmotionArcs) + '건</div>';
           }
-          if ((d.warnings || []).length) {
-            html += '<div class="warn">경고 ' + d.warnings.length + '건<ul>';
-            for (var i = 0; i < d.warnings.length && i < 30; i++) html += '<li>' + esc(d.warnings[i]) + '</li>';
+          // TASK-S9 작업 D: set.warnings(예: titleLocalized 폴백 [중요] 경고)와
+          // textpack.warnings를 합쳐서 보여준다. [중요] 접두는 붉은 상자로 분리.
+          var allWarnings = (d.setWarnings || []).concat(d.warnings || []);
+          var importantWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') === 0; });
+          var normalWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') !== 0; });
+          if (importantWarnings.length) {
+            html += '<div class="important-box"><b>중요</b><ul>';
+            for (var k = 0; k < importantWarnings.length && k < 30; k++) html += '<li>' + esc(importantWarnings[k]) + '</li>';
+            html += '</ul></div>';
+          }
+          if (normalWarnings.length) {
+            html += '<div class="warn">경고 ' + normalWarnings.length + '건<ul>';
+            for (var i = 0; i < normalWarnings.length && i < 30; i++) html += '<li>' + esc(normalWarnings[i]) + '</li>';
             html += '</ul></div>';
           }
           if ((d.errors || []).length) {

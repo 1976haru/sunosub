@@ -12,6 +12,7 @@ import {
   scoreSceneTerms,
   rankSceneTerms,
   loadSceneNounWeights,
+  isSceneNounCategory,
   SetPackValidationError,
 } from '../parse/setPackLoader.js';
 
@@ -448,4 +449,74 @@ test('S8: emptying nouns.json still leaves scoreSceneTerms with nothing to rank 
   const weights = loadSceneNounWeights();
   const entries = scoreSceneTerms(new Map(), weights);
   assert.deepEqual(entries, []);
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S9 작업 B — sceneNouns 카테고리 재분류(body/abstract 제외, config-driven)
+// ---------------------------------------------------------------------------
+
+test('S9: isSceneNounCategory excludes body/abstract per data/sceneNounWeights.json, keeps object/place/time/person/food', () => {
+  const weights = loadSceneNounWeights();
+  assert.equal(isSceneNounCategory('body', weights), false);
+  assert.equal(isSceneNounCategory('abstract', weights), false);
+  assert.equal(isSceneNounCategory('action', weights), false);
+  assert.equal(isSceneNounCategory('description', weights), false);
+  assert.equal(isSceneNounCategory('object', weights), true);
+  assert.equal(isSceneNounCategory('place', weights), true);
+  assert.equal(isSceneNounCategory('time', weights), true);
+  assert.equal(isSceneNounCategory('person', weights), true);
+  assert.equal(isSceneNounCategory('food', weights), true);
+});
+
+test('S9 condition 3+9: nouns.json\'s "shoulder"(어깨)/"hand"(손)/"hair"(머리카락) are category:"body" and excluded from sceneNouns by default; removing "body" from excludeCategories makes them eligible again (never hardcoded)', () => {
+  const nounsPath = path.join(__dirname, '..', 'data', 'lexicon', 'ko', 'nouns.json');
+  const nouns = JSON.parse(fs.readFileSync(nounsPath, 'utf8').replace(/^﻿/, ''));
+  assert.equal(nouns.entries.shoulder.category, 'body');
+  assert.equal(nouns.entries.hand.category, 'body');
+  assert.equal(nouns.entries.hair.category, 'body');
+
+  const weights = loadSceneNounWeights();
+  assert.ok(weights.excludeCategories.includes('body'));
+  assert.equal(isSceneNounCategory('body', weights), false);
+
+  const withoutBodyExcluded = { ...weights, excludeCategories: weights.excludeCategories.filter((c) => c !== 'body') };
+  assert.equal(isSceneNounCategory('body', withoutBodyExcluded), true, 'removing "body" from excludeCategories must make body-category words eligible again — if this fails, the exclusion is hardcoded somewhere else');
+});
+
+test('S9 condition 5: rankSceneTerms tops up from a description fallback pool when the primary candidate pool is short of topCount, and callers can detect the shortfall to warn', () => {
+  const weights = loadSceneNounWeights();
+  const termInfo = new Map([
+    ['커피', { songs: new Set([1]), category: 'object', order: 0 }],
+    ['해변 산책로', { songs: new Set([2]), category: 'place', order: 1 }],
+  ]);
+  const primary = rankSceneTerms(termInfo, weights, weights.topCount);
+  assert.equal(primary.length, 2, 'only 2 real candidates exist, so the primary pool alone is short of topCount');
+});
+
+test('S9 condition 5: normalizeSetPack tops up set.sceneNouns from description when the primary pool is short, and records a warning', () => {
+  const data = baseValidSetPack(
+    Array.from({ length: 3 }, (_, i) => ({
+      trackNo: i + 1,
+      // Same text on every song: "kettle" (object, primary) + "morning"
+      // (time, primary) = 2 primary candidates; "quiet"/"warm"/"slow"
+      // (description, fallback-only) = 3 more available as a top-up.
+      // 2 + 3 = 5, still short of topCount(12) — every fallback candidate
+      // gets used and a warning is expected.
+      listenerSituation: 'a quiet warm slow kettle morning',
+    }))
+  );
+  const { normalized } = normalizeSetPack(data, []);
+  assert.equal(normalized.set.sceneNouns.length, 5, `expected 2 primary + 3 description fallback = 5, got: ${JSON.stringify(normalized.set.sceneNouns)}`);
+  const fallbackWarning = normalized.set.warnings.find((w) => w.includes('description 카테고리에서'));
+  assert.ok(fallbackWarning, `expected a fallback warning, got: ${JSON.stringify(normalized.set.warnings)}`);
+  assert.ok(fallbackWarning.includes('3개'), `expected the warning to name the count (3), got: "${fallbackWarning}"`);
+});
+
+test('S9 condition 3+4: the v2 fixture\'s set.sceneNouns and actual generated instagram/naver text contain none of the excluded body words', () => {
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized } = normalizeSetPack(v2, []);
+  const bodyWords = ['어깨', '손', '머리카락', '무릎'];
+  for (const w of bodyWords) {
+    assert.ok(!normalized.set.sceneNouns.includes(w), `expected sceneNouns to exclude body word "${w}", got: ${JSON.stringify(normalized.set.sceneNouns)}`);
+  }
 });

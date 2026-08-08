@@ -11,8 +11,9 @@
 
 import { loadTemplateFile, selectTemplateWithinLimit, fillSlots } from './slotFiller.js';
 import { pickDistinctIndices, rotatedSlice } from './rotation.js';
-import { rankSceneTerms, loadSceneNounWeights } from '../parse/setPackLoader.js';
+import { rankSceneTerms, loadSceneNounWeights, isSceneNounCategory } from '../parse/setPackLoader.js';
 import { pickTopSongs } from './youtubeShort.js';
+import { buildSongListText } from './songListFormat.js';
 
 const MAX_TITLE_ATTEMPTS = 200;
 const MAX_TAG_TRIM_ITERATIONS = 20;
@@ -57,10 +58,16 @@ function deriveDominantFromKo(normalized) {
 
 /**
  * "Scene noun" slots (sceneNoun1..3 in templates) read best as an actual
- * object/place ("주전자", "해변 산책로"), not a quantifier or bare verb
- * form, so this is filtered to category:"object"/"place" from the same
- * per-song matchedTerms S0 already recorded (both listenerSituation and,
- * TASK-S8, v2's lyricThemeText — no re-scanning of raw text needed).
+ * thing/place ("주전자", "해변 산책로"), not a body part, abstract concept,
+ * quantifier, or bare verb form. TASK-S9: which categories those are is now
+ * config, not a hardcoded `category !== 'object' && category !== 'place'`
+ * check here — this shares setPackLoader.js's isSceneNounCategory() /
+ * data/sceneNounWeights.json's excludeCategories with set.sceneNouns (S0),
+ * so a category edit (e.g. removing "body" to let "어깨" back in) takes
+ * effect in both the report AND the actual template slots at once, not just
+ * one of them. Built from the same per-song matchedTerms S0 already
+ * recorded (both listenerSituation and, TASK-S8, v2's lyricThemeText — no
+ * re-scanning of raw text needed).
  *
  * TASK-S8: this used to be its own plain top-by-frequency count, completely
  * separate from normalized.set.sceneNouns's ranking — a word appearing in
@@ -74,10 +81,11 @@ function deriveDominantFromKo(normalized) {
  */
 function deriveSceneNouns(normalized, limit, excludeSceneNouns) {
   const exclude = excludeSceneNouns instanceof Set ? excludeSceneNouns : new Set(excludeSceneNouns || []);
+  const weights = loadSceneNounWeights();
   const termInfo = new Map();
   const track = (matchedTerms, trackNo) => {
     for (const term of matchedTerms) {
-      if (term.category !== 'object' && term.category !== 'place') continue;
+      if (!isSceneNounCategory(term.category, weights)) continue;
       if (exclude.has(term.ko)) continue;
       if (!termInfo.has(term.ko)) {
         termInfo.set(term.ko, { songs: new Set(), category: term.category, order: termInfo.size });
@@ -89,7 +97,6 @@ function deriveSceneNouns(normalized, limit, excludeSceneNouns) {
     track(song.listenerSituation.matchedTerms, song.trackNo);
     if (song.lyricThemeText) track(song.lyricThemeText.matchedTerms, song.trackNo);
   }
-  const weights = loadSceneNounWeights();
   return rankSceneTerms(termInfo, weights, limit);
 }
 
@@ -213,10 +220,6 @@ export function buildChapters(timeline, songs) {
 // ---------------------------------------------------------------------------
 // Description (intro -> chapters -> song list -> closing)
 // ---------------------------------------------------------------------------
-
-function buildSongListText(songs) {
-  return songs.map((s) => `${s.trackNo}. ${s.titleLocalized} (${s.title})`).join('\n');
-}
 
 export function buildDescription(templates, slots, songs, chaptersResult, setName, limits) {
   const warnings = [];

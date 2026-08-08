@@ -7,7 +7,7 @@
     { "id": "sh-t-001", "role": "title", "text": "{titleKo} | {conceptLabel}" },
     { "id": "sh-t-002", "role": "title", "text": "{titleKo} — {emotionToKo}" },
     { "id": "sh-t-003", "role": "title", "text": "{emotionFromKo}에서 {emotionToKo}(으로/로), {titleKo}" },
-    { "id": "sh-t-004", "role": "title", "text": "{titleKo} ({titleEn})" },
+    { "id": "sh-t-004", "role": "title", "text": "{titleWithOriginal}" },
     { "id": "sh-t-005", "role": "title", "text": "{seasonKo}에 어울리는 노래, {titleKo}" },
     { "id": "sh-t-006", "role": "title", "text": "{timeKo}에 듣는 {titleKo}" },
     { "id": "sh-t-007", "role": "title", "text": "{titleKo} · {conceptLabel} 쇼츠" },

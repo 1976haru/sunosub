@@ -274,16 +274,22 @@ function rankSceneNouns(termInfo, weights) {
   return rankSceneTerms(termInfo, weights, weights.topCount);
 }
 
-// A "scene noun" sets a scene — a thing, a place, a moment, someone present.
-// Verbs (action) and modifiers (description/quantity) score just as high
-// under pure rarity weighting (many are rare too), but "접다"/"기억하다"
-// filling a noun-shaped template slot reads as broken, not vivid. This
-// mirrors generate/youtubeSet.js's existing object/place-only filter for the
-// {sceneNoun1-3} template slots, widened to also allow time/person so the
-// set-level list (which isn't slotted into a fixed sentence shape) can still
-// surface something like "가을"/"가족" when that's genuinely the set's most
-// distinctive vocabulary.
-const SCENE_NOUN_CATEGORIES = new Set(['object', 'place', 'time', 'person']);
+/**
+ * TASK-S9 — a "scene noun" sets a scene: a thing, a place, a moment, a meal,
+ * someone present. Verbs (action) and modifiers (description/quantity) score
+ * just as high under pure rarity weighting (many are rare too), and body
+ * parts ("어깨") / abstract concepts ("용기", "순간") read as broken filling
+ * a noun-shaped template slot, not vivid. Which categories those are is a
+ * dictionary-editing decision, not a code one — `weights.excludeCategories`
+ * (data/sceneNounWeights.json) is the single source of truth, read by both
+ * this function (set.sceneNouns, S0) and generate/youtubeSet.js's
+ * deriveSceneNouns (the {sceneNoun1-3} template slots, S1) so removing
+ * "body" from that list makes "어깨" eligible in both places at once, not
+ * just one.
+ */
+export function isSceneNounCategory(category, weights) {
+  return Boolean(category) && !weights.excludeCategories.includes(category);
+}
 
 /**
  * Converts a validated setpack object into the S1-ready normalized shape.
@@ -303,7 +309,13 @@ export function normalizeSetPack(data, initialWarnings = []) {
   const emotionPhraseResults = []; // {resolved: boolean} for coverage.emotions
   let titleLocalizedFallbackCount = 0;
   const upstreamWarnings = []; // song.warnings from Suno Weaver Studio itself (v2 field) — merged in with a "[상류]" prefix below
+  const sceneNounWeights = loadSceneNounWeights(); // TASK-S9: excludeCategories drives trackSceneTerms below, not a hardcoded Set
   const sceneTermInfo = new Map(); // TASK-S8: ko -> {songs: Set<trackNo>, category, order} — feeds rankSceneNouns()
+  // TASK-S9: a SEPARATE pool of category:"description" matches, used only as
+  // a fallback source if excludeCategories ever leaves set.sceneNouns short
+  // of topCount (spec §2 요구사항 5) — description words are still excluded
+  // from the primary ranking, this is a deliberate last-resort top-up.
+  const descriptionTermInfo = new Map();
 
   const scanSources = [
     { name: 'timewords', lexicon: lex.timewords },
@@ -312,11 +324,17 @@ export function normalizeSetPack(data, initialWarnings = []) {
 
   function trackSceneTerms(matchedTerms, trackNo) {
     for (const m of matchedTerms) {
-      if (!SCENE_NOUN_CATEGORIES.has(m.category)) continue;
-      if (!sceneTermInfo.has(m.ko)) {
-        sceneTermInfo.set(m.ko, { songs: new Set(), category: m.category ?? null, order: sceneTermInfo.size });
+      if (isSceneNounCategory(m.category, sceneNounWeights)) {
+        if (!sceneTermInfo.has(m.ko)) {
+          sceneTermInfo.set(m.ko, { songs: new Set(), category: m.category ?? null, order: sceneTermInfo.size });
+        }
+        sceneTermInfo.get(m.ko).songs.add(trackNo);
+      } else if (m.category === 'description') {
+        if (!descriptionTermInfo.has(m.ko)) {
+          descriptionTermInfo.set(m.ko, { songs: new Set(), category: m.category, order: descriptionTermInfo.size });
+        }
+        descriptionTermInfo.get(m.ko).songs.add(trackNo);
       }
-      sceneTermInfo.get(m.ko).songs.add(trackNo);
     }
   }
 
@@ -446,8 +464,22 @@ export function normalizeSetPack(data, initialWarnings = []) {
     normalizedSongs.map((s) => (s.emotionArc.parsed ? s.emotionArc.to.ko : null)),
     3
   );
-  const sceneNounWeights = loadSceneNounWeights();
-  const sceneNouns = rankSceneNouns(sceneTermInfo, sceneNounWeights);
+  let sceneNouns = rankSceneNouns(sceneTermInfo, sceneNounWeights);
+  // TASK-S9 요구사항 5: excludeCategories 재분류로 후보가 줄어 topCount를
+  // 못 채우면, description에서 부족분만큼 보충하고 warnings에 남긴다 —
+  // 조용히 짧은 목록을 내보내지 않는다.
+  if (sceneNouns.length < sceneNounWeights.topCount) {
+    const shortfall = sceneNounWeights.topCount - sceneNouns.length;
+    const alreadyUsed = new Set(sceneNouns);
+    const fallback = scoreSceneTerms(descriptionTermInfo, sceneNounWeights)
+      .filter((e) => !alreadyUsed.has(e.ko))
+      .slice(0, shortfall)
+      .map((e) => e.ko);
+    if (fallback.length > 0) {
+      sceneNouns = [...sceneNouns, ...fallback];
+      warnings.push(`sceneNouns 후보가 부족해 description 카테고리에서 ${fallback.length}개를 보충했습니다.`);
+    }
+  }
 
   const coverageNouns = computeSourceCoverage(allMatchedTerms, allUnknownTerms, 'nouns');
   const emotionsCoverage =
