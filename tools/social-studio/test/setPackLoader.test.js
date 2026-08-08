@@ -520,3 +520,74 @@ test('S9 condition 3+4: the v2 fixture\'s set.sceneNouns and actual generated in
     assert.ok(!normalized.set.sceneNouns.includes(w), `expected sceneNouns to exclude body word "${w}", got: ${JSON.stringify(normalized.set.sceneNouns)}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// TASK-S9 후속 작업 1 — set.sceneNounDetails
+// ---------------------------------------------------------------------------
+
+test('S9 후속 완료조건 1: set.sceneNounDetails has the same length and order (by ko) as set.sceneNouns, one {en, ko, category, songCount, score} per word', () => {
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized } = normalizeSetPack(v2, []);
+  const { sceneNouns, sceneNounDetails } = normalized.set;
+  assert.equal(sceneNounDetails.length, sceneNouns.length);
+  assert.deepEqual(sceneNounDetails.map((d) => d.ko), sceneNouns, 'sceneNounDetails must be in the exact same order as sceneNouns');
+  for (const d of sceneNounDetails) {
+    assert.equal(typeof d.en, 'string', `expected a string "en" for ${d.ko}, got: ${JSON.stringify(d)}`);
+    assert.equal(typeof d.ko, 'string');
+    assert.equal(typeof d.category, 'string');
+    assert.equal(typeof d.songCount, 'number');
+    assert.ok(d.songCount >= 1);
+    assert.equal(typeof d.score, 'number');
+    assert.ok(d.score > 0);
+  }
+});
+
+test('S9 후속: sceneNounDetails.en reflects the actual surface text matched in the source (traceable back to the input), not just the dictionary key', () => {
+  const data = baseValidSetPack([{ listenerSituation: 'a warm porch swing at dusk' }]);
+  const { normalized } = normalizeSetPack(data, []);
+  const porchSwing = normalized.set.sceneNounDetails.find((d) => d.ko === '포치 그네');
+  assert.ok(porchSwing, `expected "포치 그네" in sceneNounDetails, got: ${JSON.stringify(normalized.set.sceneNounDetails)}`);
+  assert.equal(porchSwing.en, 'porch swing');
+});
+
+test('S9 후속: sceneNounDetails for description-fallback entries also carry en/category/songCount/score (not left undefined)', () => {
+  const data = baseValidSetPack(
+    Array.from({ length: 3 }, (_, i) => ({ trackNo: i + 1, listenerSituation: 'a quiet warm slow kettle morning' }))
+  );
+  const { normalized } = normalizeSetPack(data, []);
+  const fallbackEntry = normalized.set.sceneNounDetails.find((d) => d.category === 'description');
+  assert.ok(fallbackEntry, `expected at least one description-category entry from the fallback top-up, got: ${JSON.stringify(normalized.set.sceneNounDetails)}`);
+  assert.equal(typeof fallbackEntry.en, 'string');
+  assert.equal(typeof fallbackEntry.score, 'number');
+});
+
+// ---------------------------------------------------------------------------
+// TASK-S9 후속 작업 3 — "하루" 등 폭넓은 시간어를 abstract로
+// ---------------------------------------------------------------------------
+
+test('S9 후속 완료조건 3: "day"(하루)는 timewords.json에서 category:"abstract"이고, v2 세트의 sceneNouns에 "하루"가 없다', () => {
+  const timewordsPath = path.join(__dirname, '..', 'data', 'lexicon', 'ko', 'timewords.json');
+  const timewords = JSON.parse(fs.readFileSync(timewordsPath, 'utf8').replace(/^﻿/, ''));
+  assert.equal(timewords.entries.day.category, 'abstract');
+
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { normalized } = normalizeSetPack(v2, []);
+  assert.ok(!normalized.set.sceneNouns.includes('하루'), `expected "하루" excluded from sceneNouns, got: ${JSON.stringify(normalized.set.sceneNouns)}`);
+});
+
+test('S9 후속: 구체적인 시간대(동틀 무렵/저녁/밤/노을 등)는 여전히 category:"time"으로 남아 sceneNouns 후보 자격이 있다', () => {
+  const timewordsPath = path.join(__dirname, '..', 'data', 'lexicon', 'ko', 'timewords.json');
+  const timewords = JSON.parse(fs.readFileSync(timewordsPath, 'utf8').replace(/^﻿/, ''));
+  for (const key of ['afternoon', 'dusk', 'evening', 'first light', 'morning', 'night', 'sunset']) {
+    assert.equal(timewords.entries[key].category, 'time', `expected "${key}" to remain category:"time"`);
+  }
+});
+
+test('S9 후속 완료조건 4: v1·v2 명사 커버리지가 그대로다 (재분류로 사전 항목을 지우지 않았다) — 합성 픽스처는 기존부터 >=0.90 기준(정확한 1.00은 실제 v1/v2 파일로 별도 검증, 완료 보고 참조)', () => {
+  const v1 = readSetPackFile(FIXTURE_PATH);
+  const { report: r1 } = normalizeSetPack(v1, []);
+  assert.ok(r1.coverage.nouns >= 0.9, `v1 coverage.nouns regressed: ${r1.coverage.nouns}`);
+  const v2 = readSetPackFile(FIXTURE_V2_PATH);
+  const { report: r2 } = normalizeSetPack(v2, []);
+  assert.ok(r2.coverage.nouns >= 0.9, `v2 coverage.nouns regressed: ${r2.coverage.nouns}`);
+});

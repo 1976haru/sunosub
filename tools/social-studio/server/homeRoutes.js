@@ -90,6 +90,15 @@ router.post('/api/generate', (req, res, next) => {
     const { normalized, report } = runSetPackPipeline(tmpFile);
     const { textpack, outDir } = runTextPackPipeline(normalized, { youtubeUrl });
 
+    // TASK-S9 후속 — normalized.set.warnings(예: titleLocalized 폴백 [중요]
+    // 경고)와 textpack.warnings는 서로 다른 배열이다. 이전엔 setWarnings로
+    // 따로 응답에 실어 home.html의 JS가 화면에서만 합쳤는데, 이러면 응답의
+    // warnings 필드만 보는 소비자(curl, 다른 화면, 향후 코드)는 곡 제목
+    // 18개가 전부 영어로 나가는 경고를 놓친다. 응답 자체의 warnings를
+    // 완결된 목록으로 만든다 — set.warnings를 앞에 두어(더 중대함) [중요]
+    // 항목이 먼저 오게 하고, 중복은 제거한다.
+    const mergedWarnings = [...new Set([...(normalized.set.warnings || []), ...(textpack.warnings || [])])];
+
     res.json({
       ok: true,
       setName: normalized.set.setName,
@@ -98,8 +107,7 @@ router.post('/api/generate', (req, res, next) => {
       coverage: report.coverage || null,
       unknownTerms: (report.unknownTerms || []).length,
       unmatchedEmotionArcs: (report.unmatchedEmotionArcs || []).length,
-      warnings: textpack.warnings || [],
-      setWarnings: normalized.set.warnings || [], // TASK-S9: e.g. titleLocalized 폴백 [중요] 경고 — textpack.warnings와 별개 배열
+      warnings: mergedWarnings,
       errors: textpack.errors || [],
       outDir,
       packUrl: `/social-studio/pack/${encodeURIComponent(normalized.set.setName)}`,

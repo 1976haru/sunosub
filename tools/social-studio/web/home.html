@@ -181,9 +181,11 @@
           if (d.unmatchedEmotionArcs) {
             html += '<div class="warn">emotionArc 파싱 실패 ' + esc(d.unmatchedEmotionArcs) + '건</div>';
           }
-          // TASK-S9 작업 D: set.warnings(예: titleLocalized 폴백 [중요] 경고)와
-          // textpack.warnings를 합쳐서 보여준다. [중요] 접두는 붉은 상자로 분리.
-          var allWarnings = (d.setWarnings || []).concat(d.warnings || []);
+          // TASK-S9 후속: /api/generate 응답의 warnings는 이미 서버에서
+          // normalized.set.warnings + textpack.warnings를 합치고 중복을
+          // 제거해서 온다(homeRoutes.js) — 화면은 [중요] 접두만 갈라서
+          // 붉은 상자로 분리하면 된다.
+          var allWarnings = d.warnings || [];
           var importantWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') === 0; });
           var normalWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') !== 0; });
           if (importantWarnings.length) {

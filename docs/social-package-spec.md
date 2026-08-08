@@ -512,3 +512,51 @@ allowlist를 그대로 두고 시험 삼아 "body"를 지워도 아무 일도 �
 `out/{setName}/normalized.json`에서 `set.warnings`를 읽어 합치고, `[중요]` 접두가
 붙은 항목은 붉은 상자로 분리해 렌더링한다. 홈 화면(`home.html`)도 `/api/generate`
 응답에 `setWarnings` 필드를 추가해 동일하게 처리했다.
+
+## 17. TASK-S9 후속 — sceneNounDetails, 경고 병합, "하루" 재분류
+
+### 작업 1 — set.sceneNounDetails
+
+`rankSceneTerms()`(ko 문자열 배열만 반환)를 그대로 두고 그 앞단에
+`rankSceneEntries()`를 새로 뺐다 — 같은 랭킹 로직이지만 `{ko, en, category,
+songCount, score}` 전체 엔트리를 반환한다. `rankSceneTerms()`는 이제
+`rankSceneEntries(...).map(e => e.ko)`인 얇은 래퍼다(기존 호출자
+`generate/youtubeSet.js`의 `deriveSceneNouns()`는 변경 없음). `set.sceneNouns`와
+`set.sceneNounDetails`를 **같은 entries 배열**에서 함께 만들어 순서가 어긋날
+가능성을 구조적으로 없앴다.
+
+`en` 필드는 사전 키가 아니라 **원문에서 실제로 매칭된 표면형**이다
+(`lexicon.js`의 `matchedTerms[].term`) — 예를 들어 복수형이 형태소 폴백으로
+해석된 경우 사전 키("window")가 아니라 원문 그대로("windows")가 들어간다.
+"왜 이 단어가 뽑혔는지 원문에서 되짚어볼 수 있어야 한다"는 요구사항에는
+사전 키보다 표면형이 더 정확하다.
+
+`score`는 `data/sceneNounWeights.json`의 랭킹 공식이 그대로 낸 원시값이다
+(0~1로 정규화하지 않음) — 지시문 예시의 `0.82`는 예시 값일 뿐 범위를
+지정한 것은 아니라고 판단했다. 실제 v1/v2 세트는 top-12가 전부 1곡에만
+등장하는 단어라 `rareWeight(5) * (1/1) = 5`로 전부 동일하다.
+
+### 작업 2 — 경고 병합
+
+이전 구현(S9 1차)은 `homeRoutes.js`가 `warnings`(textpack.warnings)와
+`setWarnings`(normalized.set.warnings)를 **별도 필드**로 응답하고,
+`home.html`의 JS가 화면에서만 둘을 합쳐 보여줬다. 재검증 결과 이 방식은
+응답의 `warnings` 필드 자체만 보는 소비자(curl, 다른 화면, 향후 코드)에게는
+여전히 불완전했다 — 화면 렌더링 로직을 아는 사람만 전체 경고를 알 수 있는
+구조였다. `homeRoutes.js`에서 두 배열을 `Set`으로 중복 제거해 합친 뒤
+**`warnings` 필드 하나**로 응답하도록 바꿨다(`set.warnings`를 앞에 둬서
+`[중요]` 항목이 먼저 오게 했다). `home.html`은 이제 `d.warnings` 하나만
+읽어 `[중요]` 접두로 갈라 보여준다 — 클라이언트 쪽 병합 로직이 없어졌다.
+
+### 작업 3 — "하루" 재분류
+
+지시문은 "`data/lexicon/ko/nouns.json`에서 day를 옮긴다"고 했지만 실제로
+`day`는 `nouns.json`이 아니라 **`timewords.json`**에 있었다(`nouns.json`은
+현재 `category:"time"` 항목이 아예 없다 — 시간 관련 단어는 전부
+`timewords.json` 쪽). 실제 위치에 맞춰 `timewords.json`의 `day` 항목만
+`category: "time"` → `"abstract"`로 옮겼다. 같은 파일의 나머지 `time`
+카테고리 7개(afternoon/dusk/evening/first light/morning/night/sunset)는
+전부 구체적인 시간대라 그대로 뒀다 — "시간, 주, 해, 순간처럼 폭이 넓은
+단어"의 나머지(시간→time, week→주, year→해, moment→순간)는 이미 이전
+S9 작업에서 `nouns.json` 쪽에 `abstract`/`duration`으로 분류되어 있어
+추가로 손댈 게 없었다.

@@ -195,23 +195,28 @@ export function scoreSceneTerms(termInfo, weights) {
   const entries = [...termInfo.entries()].map(([ko, info]) => {
     const songCount = info.songs.size;
     const score = sceneNounBandWeight(songCount, weights) * (1 / songCount);
-    return { ko, songCount, category: info.category, order: info.order, score };
+    return { ko, en: info.en ?? null, songCount, category: info.category, order: info.order, score };
   });
   entries.sort((a, b) => b.score - a.score || a.order - b.order);
   return entries;
 }
 
 /**
+ * Same ranking as rankSceneTerms(), but returns the full entry objects
+ * ({ko, en, songCount, category, order, score}) instead of a flat ko[]
+ * array — TASK-S9's set.sceneNounDetails needs the "why was this word
+ * picked" data (songCount/score/category/the original English term) that
+ * rankSceneTerms() throws away at the end. rankSceneTerms() is now a thin
+ * wrapper around this, kept for its existing callers (generate/youtubeSet.js's
+ * per-template sceneNoun1-3 slots, which only ever wanted the ko strings).
+ *
  * Takes the top `limit` scored entries and, ONLY when `limit` is large
  * enough for the rule to be meaningful (>= weights.minRareInTop /
  * diversityCheckCount respectively — a 3-slot list has no room for a
  * "6 rare words" guarantee), applies the rare-word backstop and category
- * diversity swap described in data/sceneNounWeights.json. Shared by
- * setPackLoader.js's set.sceneNouns (limit 12, both rules active) and
- * generate/youtubeSet.js's per-template sceneNoun1-3 slots (limit 3,
- * neither rule active — score ordering alone already does the job there).
+ * diversity swap described in data/sceneNounWeights.json.
  */
-export function rankSceneTerms(termInfo, weights, limit) {
+export function rankSceneEntries(termInfo, weights, limit) {
   const isRare = (e) => e.songCount <= weights.rareMaxSongCount;
   const sorted = scoreSceneTerms(termInfo, weights);
   let top = sorted.slice(0, limit);
@@ -267,11 +272,16 @@ export function rankSceneTerms(termInfo, weights, limit) {
     }
   }
 
-  return top.map((e) => e.ko);
+  return top;
+}
+
+/** Thin wrapper over rankSceneEntries() for callers that only want the ko strings, in rank order. */
+export function rankSceneTerms(termInfo, weights, limit) {
+  return rankSceneEntries(termInfo, weights, limit).map((e) => e.ko);
 }
 
 function rankSceneNouns(termInfo, weights) {
-  return rankSceneTerms(termInfo, weights, weights.topCount);
+  return rankSceneEntries(termInfo, weights, weights.topCount);
 }
 
 /**
@@ -324,14 +334,19 @@ export function normalizeSetPack(data, initialWarnings = []) {
 
   function trackSceneTerms(matchedTerms, trackNo) {
     for (const m of matchedTerms) {
+      // TASK-S9: `m.term` is the actual surface text matched in the source
+      // (e.g. "coffee", or "windows" for a plural resolved via
+      // lexicon.js's morphological fallback) — kept as sceneNounDetails.en
+      // so a reviewer can trace exactly which input word produced a given
+      // Korean sceneNoun, not just guess from the dictionary key.
       if (isSceneNounCategory(m.category, sceneNounWeights)) {
         if (!sceneTermInfo.has(m.ko)) {
-          sceneTermInfo.set(m.ko, { songs: new Set(), category: m.category ?? null, order: sceneTermInfo.size });
+          sceneTermInfo.set(m.ko, { songs: new Set(), category: m.category ?? null, order: sceneTermInfo.size, en: m.term });
         }
         sceneTermInfo.get(m.ko).songs.add(trackNo);
       } else if (m.category === 'description') {
         if (!descriptionTermInfo.has(m.ko)) {
-          descriptionTermInfo.set(m.ko, { songs: new Set(), category: m.category, order: descriptionTermInfo.size });
+          descriptionTermInfo.set(m.ko, { songs: new Set(), category: m.category, order: descriptionTermInfo.size, en: m.term });
         }
         descriptionTermInfo.get(m.ko).songs.add(trackNo);
       }
@@ -464,22 +479,32 @@ export function normalizeSetPack(data, initialWarnings = []) {
     normalizedSongs.map((s) => (s.emotionArc.parsed ? s.emotionArc.to.ko : null)),
     3
   );
-  let sceneNouns = rankSceneNouns(sceneTermInfo, sceneNounWeights);
+  let sceneNounEntries = rankSceneNouns(sceneTermInfo, sceneNounWeights);
   // TASK-S9 요구사항 5: excludeCategories 재분류로 후보가 줄어 topCount를
   // 못 채우면, description에서 부족분만큼 보충하고 warnings에 남긴다 —
   // 조용히 짧은 목록을 내보내지 않는다.
-  if (sceneNouns.length < sceneNounWeights.topCount) {
-    const shortfall = sceneNounWeights.topCount - sceneNouns.length;
-    const alreadyUsed = new Set(sceneNouns);
+  if (sceneNounEntries.length < sceneNounWeights.topCount) {
+    const shortfall = sceneNounWeights.topCount - sceneNounEntries.length;
+    const alreadyUsed = new Set(sceneNounEntries.map((e) => e.ko));
     const fallback = scoreSceneTerms(descriptionTermInfo, sceneNounWeights)
       .filter((e) => !alreadyUsed.has(e.ko))
-      .slice(0, shortfall)
-      .map((e) => e.ko);
+      .slice(0, shortfall);
     if (fallback.length > 0) {
-      sceneNouns = [...sceneNouns, ...fallback];
+      sceneNounEntries = [...sceneNounEntries, ...fallback];
       warnings.push(`sceneNouns 후보가 부족해 description 카테고리에서 ${fallback.length}개를 보충했습니다.`);
     }
   }
+  // TASK-S9 — sceneNouns(문자열 배열, 기존 호환)와 sceneNounDetails(왜 이
+  // 단어가 뽑혔는지 검증용: en/category/songCount/score)를 같은 entries
+  // 배열에서 함께 만든다 — 둘을 따로 계산하면 순서가 어긋날 수 있다.
+  const sceneNouns = sceneNounEntries.map((e) => e.ko);
+  const sceneNounDetails = sceneNounEntries.map((e) => ({
+    en: e.en,
+    ko: e.ko,
+    category: e.category,
+    songCount: e.songCount,
+    score: e.score,
+  }));
 
   const coverageNouns = computeSourceCoverage(allMatchedTerms, allUnknownTerms, 'nouns');
   const emotionsCoverage =
@@ -504,6 +529,7 @@ export function normalizeSetPack(data, initialWarnings = []) {
       titlesKo: normalizedSongs.map((s) => s.titleLocalized),
       dominantEmotions,
       sceneNouns,
+      sceneNounDetails, // TASK-S9: same order as sceneNouns — {en, ko, category, songCount, score} per word
       seasonHint,
       warnings,
       assets: { shorts: [] },
