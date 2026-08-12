@@ -61,6 +61,21 @@
   .important-box b { color: var(--err); }
   .important-box ul { margin: 4px 0 0; padding-left: 18px; }
   .important-box li { font-size: 13px; }
+  /* TASK-S10 */
+  .mode-options { display: flex; gap: 16px; flex-wrap: wrap; margin: 4px 0 2px; }
+  .mode-options label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink); font-weight: 400; }
+  .mode-hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  textarea.mono {
+    width: 100%; min-height: 220px; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: 6px; font: 12px/1.5 ui-monospace, Consolas, monospace; background: #fff; resize: vertical;
+  }
+  .prompt-panel { margin-top: 12px; padding: 12px 14px; border-radius: 6px; background: #fbfaf8; border: 1px solid var(--line); display: none; }
+  .prompt-panel.show { display: block; }
+  .prompt-panel h3 { font-size: 13px; margin: 0 0 8px; }
+  .import-result { margin-top: 10px; font-size: 13px; }
+  .import-result .replaced { color: var(--ok); }
+  .import-result .kept { color: var(--muted); }
+  .import-result .ierr { color: var(--err); }
 </style>
 </head>
 <body>
@@ -80,8 +95,27 @@
       <input type="text" id="url" placeholder="https://youtu.be/..." />
     </div>
   </div>
+  <div>
+    <label>생성 방식</label>
+    <div class="mode-options">
+      <label><input type="radio" name="mode" value="local" checked /> 빠르게 (로컬) — 즉시, 무료</label>
+      <label><input type="radio" name="mode" value="export" /> 프롬프트 만들기 — Claude Code/Codex에 붙여넣기, 무료</label>
+      <label><input type="radio" name="mode" value="gemini" /> Gemini 자동 — 무료 한도 내</label>
+    </div>
+    <p class="mode-hint" id="modeHint">템플릿 조합으로 즉시 만듭니다. 문법은 정확하지만 스토리텔링 품질은 보통입니다.</p>
+  </div>
   <button class="btn" id="runBtn" disabled>생성</button>
   <div class="result" id="result"></div>
+
+  <div class="prompt-panel" id="promptPanel">
+    <h3>프롬프트 (Claude Code/Codex에 붙여넣으세요)</h3>
+    <textarea class="mono" id="promptText" readonly></textarea>
+    <button class="btn ghost" id="copyPromptBtn" type="button" style="margin-top:8px;">복사</button>
+    <p class="mode-hint" style="margin-top:14px;">위 프롬프트를 Claude Code나 Codex에 붙여넣고, 받은 JSON 결과를 아래에 그대로 붙여넣으세요 (```json 코드펜스가 있어도 됩니다).</p>
+    <textarea class="mono" id="importText" placeholder="여기에 JSON 결과를 붙여넣으세요"></textarea>
+    <button class="btn" id="importBtn" type="button" style="margin-top:8px;">가져오기</button>
+    <div class="import-result" id="importResult"></div>
+  </div>
 </div>
 
 <div class="panel">
@@ -97,6 +131,47 @@
   var runBtn = document.getElementById('runBtn');
   var resultEl = document.getElementById('result');
   var setsEl = document.getElementById('sets');
+  var modeHintEl = document.getElementById('modeHint');
+  var promptPanelEl = document.getElementById('promptPanel');
+  var promptTextEl = document.getElementById('promptText');
+  var importTextEl = document.getElementById('importText');
+  var importBtn = document.getElementById('importBtn');
+  var importResultEl = document.getElementById('importResult');
+  var copyPromptBtn = document.getElementById('copyPromptBtn');
+  var lastSetName = null;
+
+  var MODE_HINTS = {
+    local: '템플릿 조합으로 즉시 만듭니다. 문법은 정확하지만 스토리텔링 품질은 보통입니다.',
+    export: '가사의 구체적 이미지를 담은 프롬프트를 만듭니다. Claude Code/Codex에 붙여넣어 받은 결과를 가져오면 훨씬 생생한 문장이 됩니다. 비용 0원.',
+    gemini: 'Gemini 무료 티어로 자동 생성합니다. 한도를 넘으면 자동으로 로컬 결과로 대체됩니다.'
+  };
+
+  function selectedMode() {
+    var checked = document.querySelector('input[name="mode"]:checked');
+    return checked ? checked.value : 'local';
+  }
+
+  function refreshGeminiStatus() {
+    if (selectedMode() !== 'gemini') return;
+    fetch('/social-studio/api/gemini-status')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var extra = d.confirmed
+          ? ('오늘 사용한 요청 수: ' + d.requestCountToday + (d.model ? ' · 모델: ' + esc(d.model) : ''))
+          : 'Gemini 설정이 아직 확인되지 않아 항상 로컬 결과로 대체됩니다 (data/geminiConfig.json).';
+        modeHintEl.textContent = MODE_HINTS.gemini + ' — ' + extra;
+      })
+      .catch(function () { /* 상태 표시는 참고용 — 실패해도 생성 자체는 그대로 동작 */ });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="mode"]'), function (radio) {
+    radio.addEventListener('change', function () {
+      var mode = selectedMode();
+      modeHintEl.textContent = MODE_HINTS[mode] || '';
+      promptPanelEl.className = 'prompt-panel';
+      if (mode === 'gemini') refreshGeminiStatus();
+    });
+  });
 
   fileEl.addEventListener('change', function () {
     runBtn.disabled = !fileEl.files.length;
@@ -149,6 +224,9 @@
     var f = fileEl.files[0];
     if (!f) return;
     runBtn.disabled = true;
+    promptPanelEl.className = 'prompt-panel';
+    importResultEl.innerHTML = '';
+    importTextEl.value = '';
     show('생성 중…', false);
 
     var reader = new FileReader();
@@ -160,7 +238,7 @@
       fetch('/social-studio/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: String(reader.result), youtubeUrl: urlEl.value.trim() })
+        body: JSON.stringify({ content: String(reader.result), youtubeUrl: urlEl.value.trim(), mode: selectedMode() })
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
@@ -170,6 +248,7 @@
             return;
           }
           var d = res.d;
+          lastSetName = d.setName;
           var cov = d.coverage || {};
           var html = '<div class="kv">'
             + '<span><b>세트</b> ' + esc(d.setName) + '</span>'
@@ -203,8 +282,19 @@
             for (var j = 0; j < d.errors.length && j < 30; j++) html += '<li>' + esc(d.errors[j]) + '</li>';
             html += '</ul></div>';
           }
+          if (d.mode === 'gemini' && d.usedFallback) {
+            html += '<div class="warn">Gemini 결과 대신 로컬 결과를 사용했습니다 (위 경고 참고).</div>';
+          }
           html += '<p style="margin:10px 0 0"><a class="setlink" href="' + esc(d.packUrl) + '">복사 화면 열기 →</a></p>';
           show(html, false);
+
+          if (d.mode === 'export' && d.hasPrompt) {
+            promptTextEl.value = d.prompt;
+            promptPanelEl.className = 'prompt-panel show';
+          } else {
+            promptPanelEl.className = 'prompt-panel';
+          }
+
           loadSets();
         })
         .catch(function (e) {
@@ -213,6 +303,58 @@
         });
     };
     reader.readAsText(f, 'utf-8');
+  });
+
+  copyPromptBtn.addEventListener('click', function () {
+    promptTextEl.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(promptTextEl.value).catch(function () { document.execCommand('copy'); });
+    } else {
+      document.execCommand('copy');
+    }
+    copyPromptBtn.textContent = '복사됨';
+    setTimeout(function () { copyPromptBtn.textContent = '복사'; }, 1500);
+  });
+
+  importBtn.addEventListener('click', function () {
+    if (!lastSetName) return;
+    var rawText = importTextEl.value;
+    if (!rawText.trim()) {
+      importResultEl.innerHTML = '<span class="ierr">붙여넣은 내용이 없습니다.</span>';
+      return;
+    }
+    importBtn.disabled = true;
+    importResultEl.innerHTML = '가져오는 중…';
+    fetch('/social-studio/api/pack/' + encodeURIComponent(lastSetName) + '/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawText: rawText })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        importBtn.disabled = false;
+        if (!res.ok) {
+          importResultEl.innerHTML = '<span class="ierr">가져오기 실패: ' + esc(res.d.error || '알 수 없는 오류') + '</span>';
+          return;
+        }
+        var d = res.d;
+        var html = '';
+        if (d.replaced && d.replaced.length) {
+          html += '<div class="replaced"><b>교체됨(' + d.replaced.length + ')</b>: ' + d.replaced.map(esc).join(', ') + '</div>';
+        }
+        if (d.keptLocal && d.keptLocal.length) {
+          html += '<div class="kept"><b>로컬 유지(' + d.keptLocal.length + ')</b>: ' + d.keptLocal.map(function (k) { return esc(k.path) + ' — ' + esc(k.reason); }).join('<br>') + '</div>';
+        }
+        if (d.errors && d.errors.length) {
+          html += '<div class="ierr"><b>검사 오류(' + d.errors.length + ')</b>: ' + d.errors.map(esc).join('<br>') + '</div>';
+        }
+        if (!html) html = '변경된 항목이 없습니다.';
+        importResultEl.innerHTML = html;
+      })
+      .catch(function (e) {
+        importBtn.disabled = false;
+        importResultEl.innerHTML = '<span class="ierr">가져오기 실패: ' + esc(e.message) + '</span>';
+      });
   });
 
   document.getElementById('reloadBtn').addEventListener('click', loadSets);

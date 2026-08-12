@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "_comment": "TASK-S10 작업 C — Gemini 무료 티어 실제 한도. 스펙(docs 작업 C)이 추정값을 코드/설정에 넣는 것을 명시적으로 금지한다: '무료 티어 한도는 2025년 12월과 2026년에 여러 차례 변경되었고, 자료마다 수치가 크게 다르다.' 공식 문서(ai.google.dev/gemini-api/docs/rate-limits)도 계정별 정확한 숫자는 싣지 않고 Google AI Studio 대시보드(aistudio.google.com/rate-limit)로만 안내한다 — 로그인이 필요해 이 세션에서 직접 확인하지 못했다. confirmed:false인 동안 generate/geminiClient.js는 이 설정을 신뢰하지 않고 네트워크 호출 없이 즉시 local로 폴백한다(안전 기본값). 사용 전 Google AI Studio 대시보드에서 실제 model/requestsPerMinute/requestsPerDay/tokensPerMinute 값을 확인하고 이 파일을 채운 뒤 confirmed를 true로 바꾸세요.",
+  "confirmed": false,
+  "confirmedAt": null,
+  "model": null,
+  "requestsPerMinute": null,
+  "requestsPerDay": null,
+  "tokensPerMinute": null,
+  "maxRequestsPerRun": 1,
+  "maxRetries": 3
+}

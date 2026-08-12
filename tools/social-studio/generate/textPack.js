@@ -369,8 +369,15 @@ export function runTextPackPipeline(normalized, options = {}) {
 
   const outDir = path.join(OUT_ROOT, normalized.set.setName);
   fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(path.join(outDir, 'textpack.json'), JSON.stringify(textpack, null, 2) + '\n', 'utf8');
+  const textpackJson = JSON.stringify(textpack, null, 2) + '\n';
+  fs.writeFileSync(path.join(outDir, 'textpack.json'), textpackJson, 'utf8');
   fs.writeFileSync(path.join(outDir, 'textpack.md'), markdown, 'utf8');
+  // TASK-S10 — always keep a pristine local-mode copy so generate/promptImport.js
+  // and generate/geminiClient.js always have a known-good fallback/merge base to
+  // return to, regardless of which mode (local/export/gemini) runs next. Cheap
+  // (same content as textpack.json at this point) and never overwritten by S10's
+  // export/gemini merge step — see promptImport.js's importPromptResult().
+  fs.writeFileSync(path.join(outDir, 'textpack.local.json'), textpackJson, 'utf8');
 
   if (options.onAfterGenerate) options.onAfterGenerate({ textpack, outDir, normalized }); // TASK-S3 lint/regenerate hook — this file never imports lint/socialLint.js itself
 

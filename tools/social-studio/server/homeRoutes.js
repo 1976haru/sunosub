@@ -16,7 +16,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runSetPackPipeline } from '../parse/setPackLoader.js';
-import { runTextPackPipeline } from '../generate/textPack.js';
+import { runGenerationPipeline } from '../generate/modeOrchestrator.js';
+import { geminiStatus } from '../generate/geminiClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOME_HTML_PATH = path.join(__dirname, '..', 'web', 'home.html');
@@ -71,12 +72,17 @@ router.get('/api/sets', (_req, res, next) => {
   }
 });
 
+// TASK-S10 — 완료조건 2: 모드를 지정하지 않으면 'local'. 잘못된 값도
+// 'local'로 떨어진다(조용한 오동작보다 안전한 기본값이 우선).
+const VALID_MODES = new Set(['local', 'export', 'gemini']);
+
 // POST /social-studio/api/generate — 가사 JSON 내용을 받아 파이프라인 실행
-router.post('/api/generate', (req, res, next) => {
+router.post('/api/generate', async (req, res, next) => {
   let tmpFile = null;
   try {
     const content = String(req.body?.content || '');
     const youtubeUrl = String(req.body?.youtubeUrl || '').trim();
+    const mode = VALID_MODES.has(req.body?.mode) ? req.body.mode : 'local';
 
     if (!content) throw httpError('가사 JSON 내용이 비어 있습니다.');
     if (content.length > MAX_UPLOAD_CHARS) throw httpError('파일이 너무 큽니다.');
@@ -88,7 +94,8 @@ router.post('/api/generate', (req, res, next) => {
     fs.writeFileSync(tmpFile, content, 'utf8');
 
     const { normalized, report } = runSetPackPipeline(tmpFile);
-    const { textpack, outDir } = runTextPackPipeline(normalized, { youtubeUrl });
+    const generation = await runGenerationPipeline(normalized, { youtubeUrl, mode });
+    const { textpack, outDir } = generation;
 
     // TASK-S9 후속 — normalized.set.warnings(예: titleLocalized 폴백 [중요]
     // 경고)와 textpack.warnings는 서로 다른 배열이다. 이전엔 setWarnings로
@@ -97,7 +104,12 @@ router.post('/api/generate', (req, res, next) => {
     // 18개가 전부 영어로 나가는 경고를 놓친다. 응답 자체의 warnings를
     // 완결된 목록으로 만든다 — set.warnings를 앞에 두어(더 중대함) [중요]
     // 항목이 먼저 오게 하고, 중복은 제거한다.
-    const mergedWarnings = [...new Set([...(normalized.set.warnings || []), ...(textpack.warnings || [])])];
+    // TASK-S10 — generation.warnings는 gemini 모드의 폴백 사유(설정 미확인,
+    // 429, JSON 파싱 실패 등) 같은, local 모드에는 없던 경고다. 위와 같은
+    // 이유로 응답의 warnings 하나에 합친다.
+    const mergedWarnings = [
+      ...new Set([...(normalized.set.warnings || []), ...(textpack.warnings || []), ...(generation.warnings || [])]),
+    ];
 
     res.json({
       ok: true,
@@ -111,11 +123,26 @@ router.post('/api/generate', (req, res, next) => {
       errors: textpack.errors || [],
       outDir,
       packUrl: `/social-studio/pack/${encodeURIComponent(normalized.set.setName)}`,
+      mode: generation.mode,
+      prompt: generation.prompt || null,
+      hasPrompt: Boolean(generation.prompt),
+      usedFallback: generation.usedFallback || false,
+      requestCount: typeof generation.requestCount === 'number' ? generation.requestCount : null,
     });
   } catch (error) {
     next(error);
   } finally {
     if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* ignore */ } }
+  }
+});
+
+// GET /social-studio/api/gemini-status — TASK-S10: home.html의 "Gemini 자동" 모드 선택 시
+// 오늘 사용한 요청 수와 설정 확인 여부를 보여준다. API 키 값 자체는 절대 응답에 넣지 않는다.
+router.get('/api/gemini-status', (_req, res, next) => {
+  try {
+    res.json(geminiStatus());
+  } catch (error) {
+    next(error);
   }
 });
 

@@ -31,6 +31,7 @@ import {
   PackStateError,
 } from '../store/packState.js';
 import * as history from '../store/history.js';
+import { importPromptResult, PromptImportError } from '../generate/promptImport.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACK_HTML_PATH = path.join(__dirname, '..', 'web', 'pack.html');
@@ -176,6 +177,33 @@ router.post('/api/pack/:setName/reveal', (req, res, next) => {
     res.json({ ok: true, target });
   } catch (error) {
     next(error);
+  }
+});
+
+// POST /social-studio/api/pack/:setName/import — TASK-S10 작업 B: Claude Code/Codex에
+// 붙여넣어 받은 스토리텔링 JSON을 가져와 textpack.local.json 위에 병합한다.
+// textpack.local.json 자체는 절대 덮어쓰지 않는다(generate/promptImport.js).
+router.post('/api/pack/:setName/import', (req, res, next) => {
+  try {
+    const setName = requireValidSetName(req);
+    const rawText = req.body?.rawText;
+    if (typeof rawText !== 'string' || !rawText.trim()) {
+      throw httpError('붙여넣은 내용이 비어 있습니다.');
+    }
+    const result = importPromptResult(setName, rawText);
+    res.json({
+      ok: true,
+      replaced: result.replaced,
+      keptLocal: result.keptLocal,
+      errors: result.errors,
+      display: buildDisplayItems(setName),
+    });
+  } catch (error) {
+    if (error instanceof PromptImportError) {
+      next(httpError(error.message, 400));
+    } else {
+      next(error);
+    }
   }
 });
 

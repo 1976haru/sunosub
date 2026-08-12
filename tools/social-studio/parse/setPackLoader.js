@@ -33,6 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLexicon, loadStopwords, scanTextMulti, computeSourceCoverage, lookupExact } from './lexicon.js';
 import { parseEmotionArc } from './emotionArcParser.js';
+import { buildStoryMaterial } from './storyMaterial.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -449,6 +450,15 @@ export function normalizeSetPack(data, initialWarnings = []) {
     };
   });
 
+  // TASK-S10 작업 A — set.storyMaterial. 반드시 아래 seasonMoment 프로모션
+  // *이전*에 계산한다: 프로모션이 실행되면 곡별 seasonMoment가 null로
+  // 지워지는데, storyMaterial.openingScene은 그 원문이 필요하다.
+  const storyMaterial = buildStoryMaterial(normalizedSongs, {
+    nounsLex: lex.nouns,
+    timewordsLex: lex.timewords,
+    stopwords,
+  });
+
   if (titleLocalizedFallbackCount > 0) {
     const total = data.songs.length;
     const langLabel = OUTPUT_LANGUAGE_LABELS[outputLanguage];
@@ -533,6 +543,8 @@ export function normalizeSetPack(data, initialWarnings = []) {
       seasonHint,
       warnings,
       assets: { shorts: [] },
+      storyMaterial, // TASK-S10 — local/export/gemini 세 생성 모드가 공유하는 스토리텔링 재료
+
     },
     songs: normalizedSongs,
   };

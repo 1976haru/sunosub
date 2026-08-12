@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "_comment": "TASK-S10 작업 D — lint/hallucinationGuard.js 전용. 언어 모델이 만들어낸 텍스트에서 입력에 없는 '사실 주장'(차트 순위·판매량·수상 이력 등)을 잡는 키워드 목록. bannedPhrases.json(과장/유도 표현, S3/R5)과는 목적이 다르므로 별도 파일 — 저 목록을 수정하지 않는다.",
+  "keywords": [
+    "빌보드", "billboard", "차트 1위", "차트인", "역주행", "음원 차트", "멜론 차트", "차트 순위",
+    "판매량", "밀리언셀러", "골든디스크", "그래미", "grammy", "수상", "대상 수상", "신인상",
+    "1위 곡", "최다 판매", "누적 판매", "스트리밍 1위", "공식 순위", "top 10", "top10",
+    "no.1", "#1 hit", "platinum", "certified gold", "award-winning", "chart-topping"
+  ]
+}
