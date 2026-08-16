@@ -223,7 +223,13 @@ router.post('/translate', async (req, res, next) => {
     const languages = Array.isArray(req.body?.languages) ? req.body.languages.map(String).filter(Boolean) : [];
     if (!title) return res.status(400).json({ error: '번역할 제목이 없습니다.' });
     if (!languages.length) return res.status(400).json({ error: '번역 언어를 하나 이상 선택해 주세요.' });
-    if (languages.length > 10) return res.status(400).json({ error: '한 번에 최대 10개 언어까지 처리할 수 있습니다.' });
+    // TASK CS-v1.7 — was `> 10`, hardcoded back when the client always sent
+    // fixed batches of 8. tools/yt/app.js now sizes a batch to the
+    // description length (estimateBatchSize()) and can legitimately send all
+    // 50 languages in one call for a short description; capping at the full
+    // language-list size just guards against a malformed/huge payload, not
+    // against a normal batch.
+    if (languages.length > 50) return res.status(400).json({ error: '한 번에 최대 50개 언어까지 처리할 수 있습니다.' });
 
     const ai = requireGeminiClient();
     const prompt = `You are a professional YouTube metadata localization translator.

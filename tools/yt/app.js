@@ -24,7 +24,6 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function showToast(message) {
   const el = $('toast');
@@ -161,6 +160,26 @@ function chunk(array, size) {
   return result;
 }
 
+/*
+ * TASK CS-v1.7 — a fixed batch size of 8 always split 50 languages into 7
+ * calls, whether the description was 300 characters or 4000. Size the batch
+ * to the description instead: budget a per-call output token ceiling
+ * (12000, comfortably under the 16384 maxOutputTokens routes/yt.js's
+ * /translate sets) and estimate tokens per language as roughly half the
+ * character count (title + description translated, ko/ja-heavy text) plus a
+ * fixed overhead for the language label and JSON structure. Short
+ * descriptions collapse to a single call; only very long ones (~4000+
+ * chars) end up needing more than 7.
+ */
+const TRANSLATE_TOKEN_BUDGET = 12000;
+
+function estimateBatchSize(description, totalSelected) {
+  const descLength = Array.from(description || '').length;
+  const perLanguageTokens = (descLength + 100) / 2;
+  const size = Math.floor(TRANSLATE_TOKEN_BUDGET / perLanguageTokens);
+  return Math.max(1, Math.min(totalSelected, size));
+}
+
 async function translateSelected() {
   if (state.translating || !state.geminiConfigured) return;
   const title = $('sourceTitle').value.trim();
@@ -177,11 +196,14 @@ async function translateSelected() {
   $('translateBtn').textContent = '번역 중…';
   $('progressWrap').classList.remove('hidden');
 
-  const batches = chunk(selected, 8);
+  const batchSize = estimateBatchSize(description, selected.length);
+  const batches = chunk(selected, batchSize);
   try {
+    let processed = 0;
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      $('progressText').textContent = `${selected.length}개 언어 중 ${Math.min(i * 8 + batch.length, selected.length)}개 처리 중 · 묶음 ${i + 1}/${batches.length}`;
+      processed += batch.length;
+      $('progressText').textContent = `${selected.length}개 언어 중 ${processed}개 처리 중 · 묶음 ${i + 1}/${batches.length}`;
       $('progressBar').style.width = `${Math.round((i / batches.length) * 100)}%`;
       const data = await api('/api/yt/translate', {
         method: 'POST',
@@ -190,7 +212,9 @@ async function translateSelected() {
       state.results.push(...data.results);
       renderResults();
       saveLocal();
-      if (i < batches.length - 1) await sleep(250);
+      // TASK CS-v1.7 — no client-side sleep here anymore; lib/gemini.js's
+      // process-wide queue paces every call (including these), and pacing
+      // it from two places would just have them fight each other.
     }
     $('progressBar').style.width = '100%';
     $('progressText').textContent = `${state.results.length}개 언어 번역 완료`;
