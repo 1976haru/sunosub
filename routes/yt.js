@@ -254,8 +254,27 @@ function isThinkingUnsupportedError(error) {
   return /thinking/i.test(String(error?.message || ''));
 }
 
+/*
+ * TASK CS-v1.8 follow-up — quality issues found by manually diffing real
+ * 50-language output against the Korean source (not theoretical):
+ *   1. Fabrication: "6070" (a Korean idiom for "1960s-70s") got expanded
+ *      into "60, 70, 80" in 8 languages — a fact invented mid-translation.
+ *   2. Truncation: the old `.slice(0, 100)` cut Arabic mid-word through the
+ *      channel name, producing garbage like "...oldpopl".
+ *   3. Literal-copy: "6070"/"607080" got copied as digits by 4 languages
+ *      instead of becoming a natural decade phrase (contrast the German/
+ *      Russian results, which got it right unprompted).
+ *   4. Missing separator: 10 languages fused "title" and "channel name"
+ *      together with no separator between them, unlike the Korean source.
+ *   5. Wrong-domain mistranslation: uk read a music-related word as
+ *      "pop art", is read something as "song lyrics" out of context —
+ *      the model was never told this is a music-playlist channel.
+ * Rules 3-6 below address these directly; the "MUSIC PLAYLIST" framing
+ * in the intro line addresses #5.
+ */
 function buildTranslatePrompt(title, description, languages) {
-  return `You are a professional YouTube metadata localization translator.
+  return `You are a professional YouTube metadata localization translator for a Korean YouTube MUSIC PLAYLIST channel. Every video is a music playlist (mood/genre/era-themed background music). Use that context to resolve ambiguous words — e.g. a word that could mean "pop art" or "pop music" always means MUSIC here; a word that could mean "lyrics" or general "text" in a title refers to song content, not literature or visual art.
+
 Translate the Korean title and description into every target language listed below.
 
 Target languages:
@@ -264,12 +283,15 @@ ${languages.map((x, i) => `${i + 1}. ${x}`).join('\n')}
 Rules:
 1. Return exactly one object per requested target language, in the same order.
 2. language must exactly match the target-language label supplied above.
-3. translatedTitle must be natural, clickable, and no more than 100 Unicode characters.
-4. Preserve tags such as [playlist], [Playlist], and emojis.
-5. Translate normal hashtags naturally, but keep numeric hashtags such as #7080.
-6. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
-7. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
-8. Do not add explanations, quotation marks, or extra marketing claims.
+3. Do not add any fact, year, number, or detail that is not present in the original text. Never expand "6070" (or similar) into "60, 70, 80" or introduce any decade/number that isn't literally there.
+4. When "6070" (or similar Korean decade shorthand like "7080", "8090") appears as descriptive text — not inside a "#" hashtag — it means "the 1960s and 1970s" ("60년대와 70년대"), a common Korean way to write two consecutive decades together. Render it as a natural decade expression in the target language instead of copying the digits unchanged — for example "60s & 70s" (English), "60er & 70er" (German), "60-70-е" (Russian). Do not leave it as "6070" or "607080".
+5. translatedTitle must be natural and clickable, targeting at most 90 Unicode characters including spaces — leave headroom, do not write up to the limit. Never cut, abbreviate, or truncate the channel/playlist name to make a title fit a length target; if a translation genuinely cannot fit within the limit without cutting the channel name, shorten the rest of the title instead — the channel name must always appear complete.
+6. If the original title has a structural separator between the main title and the channel/playlist name (such as "|", "-", "ㅣ"), keep an equivalent separator in the translation. Do not merge the two parts together with no separator between them.
+7. Preserve tags such as [playlist], [Playlist], and emojis.
+8. Translate normal hashtags naturally, but keep numeric hashtags such as #7080 unchanged.
+9. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
+10. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+11. Do not add explanations, quotation marks, or extra marketing claims.
 
 Original title:
 ${title}
@@ -493,11 +515,34 @@ router.post('/translate', async (req, res, next) => {
       }
       fetchedResults = parsed.map((item, index) => ({
         language: languagesToFetch[index] || String(item.language || ''),
-        translatedTitle: String(item.translatedTitle || '').trim().slice(0, 100),
+        translatedTitle: String(item.translatedTitle || '').trim(),
         translatedDescription: String(item.translatedDescription || '').trim(),
       }));
+
+      // TASK CS-v1.8 follow-up — was `.slice(0, 100)` above, which silently
+      // cut the title at exactly 100 Unicode characters regardless of what
+      // was there. Measured real damage: an Arabic title got cut mid-word
+      // through the channel name, producing "...oldpopl" instead of the
+      // actual channel name. The prompt now asks for <=90 chars with an
+      // explicit "never truncate the channel name" rule, but if the model
+      // still returns something over the hard 100-char cap, drop that
+      // language instead of mangling it — it comes back via
+      // `missingLanguages` for the caller to retry, same as a truncated
+      // batch already does, rather than shipping a broken channel name.
+      const oversizedTitleLanguages = [];
+      fetchedResults = fetchedResults.filter((r) => {
+        if (Array.from(r.translatedTitle).length > 100) {
+          oversizedTitleLanguages.push(r.language);
+          return false;
+        }
+        return true;
+      });
+
       const recoveredLanguages = new Set(fetchedResults.map((r) => r.language));
-      missingLanguages = truncated ? languagesToFetch.filter((lang) => !recoveredLanguages.has(lang)) : [];
+      missingLanguages = [...new Set([
+        ...(truncated ? languagesToFetch.filter((lang) => !recoveredLanguages.has(lang)) : []),
+        ...oversizedTitleLanguages,
+      ])];
 
       // TASK CS-v1.8 — cache whatever actually came back, salvaged partial
       // batch included, so the languages that DID complete never cost a
