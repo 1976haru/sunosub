@@ -14,3 +14,7 @@ output/
 .env.local
 *.log
 npm-debug.log*
+# Google Cloud Console's OAuth client download — the real value belongs in
+# .yt_oauth.json only (CLAUDE.md 4.4), never as this raw downloaded file.
+client_secret*.json
+*client_secret*.json
