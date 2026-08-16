@@ -102,13 +102,21 @@ async function loadStatus() {
     const tierBadge = status.paidKeyConfigured
       ? `<span class="badge warn" title="이 화면의 번역·재생성 호출만 유료 키로 나갑니다. 다른 4개 도구는 무료 키를 그대로 씁니다.">번역: 유료 키 사용 중</span>`
       : `<span class="badge" title="유료 키를 설정하지 않아 무료 키로 동작합니다.">번역: 무료 키 사용 중</span>`;
-    // TASK CS-v1.8 task D.7 — cost only stays managed if it's visible. Shown
-    // whenever any paid-tier call has happened today, even without a paid
-    // key configured (free-key fallback still counts as the "paid slot" —
-    // that's exactly the tier /translate and /regenerate run on).
+    // TASK CS-v1.8 task D.7 — cost only stays managed if it's visible.
+    // TASK CS-v1.8 follow-up — was `paidCalls ? ... : ''`, which lit up as
+    // "유료 호출 N회" even with no paid key configured, because
+    // byTier.paid used to count every request routed to the paid SLOT
+    // (i.e. every /translate·/regenerate call), not every request that
+    // actually spent a paid KEY (lib/gemini.js's currentKey('paid')
+    // silently falls back to the free key when unset). That counting bug
+    // is fixed at the source now, but a day's worth of already-recorded
+    // byTier.paid from before the fix stays mislabeled in
+    // .gemini_usage.json (left as-is, see the fix commit) until it ages
+    // out at midnight — so gate the "유료" framing on paidKeyConfigured
+    // itself, not just a nonzero count, rather than trusting stale data.
     const paidCalls = usage?.byTier?.paid || 0;
     const paidOutputTokens = usage?.tokens?.paid?.output || 0;
-    const costBadge = paidCalls
+    const costBadge = (status.paidKeyConfigured && paidCalls)
       ? `<span class="badge warn" title="유튜브 번역기의 번역·재생성 호출만 집계 · 참고용, 실제 청구는 Google Cloud 콘솔 기준">오늘 유료 호출 ${paidCalls}회 · 출력 ${formatTokensMan(paidOutputTokens)} 토큰</span>`
       : '';
     $('statusBadges').innerHTML = `
