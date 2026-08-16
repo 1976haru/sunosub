@@ -76,6 +76,19 @@
   .import-result .replaced { color: var(--ok); }
   .import-result .kept { color: var(--muted); }
   .import-result .ierr { color: var(--err); }
+  /* CS-v1.9 — 원클릭 재생성 */
+  .setlink-btn {
+    background: none; border: 0; padding: 0; margin: 0; font: inherit;
+    color: var(--accent); font-weight: 600; cursor: pointer; text-align: left;
+  }
+  .setlink-btn:hover { text-decoration: underline; }
+  .setlink-btn:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+  .setname-disabled { color: var(--muted); font-weight: 600; }
+  .no-source-hint { font-size: 11px; color: var(--muted); margin-top: 3px; max-width: 280px; line-height: 1.4; }
+  .fallback-banner {
+    margin-top: 8px; padding: 8px 12px; background: #fdf1ea; border: 1px solid var(--warn);
+    border-radius: 6px; color: var(--warn); font-weight: 600; font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -120,8 +133,10 @@
 
 <div class="panel">
   <h2>2. 만들어진 세트</h2>
+  <p class="mode-hint" style="margin-top:-6px;">제목을 클릭하면 저장된 원본 가사로 즉시 다시 만듭니다(Gemini 모드). 파일을 다시 올리거나 방식을 고를 필요가 없습니다.</p>
   <div id="sets"><div class="empty">불러오는 중…</div></div>
   <button class="btn ghost" id="reloadBtn">새로고침</button>
+  <div class="result" id="regenResult"></div>
 </div>
 
 <script>
@@ -138,7 +153,9 @@
   var importBtn = document.getElementById('importBtn');
   var importResultEl = document.getElementById('importResult');
   var copyPromptBtn = document.getElementById('copyPromptBtn');
+  var regenResultEl = document.getElementById('regenResult');
   var lastSetName = null;
+  var regenInFlight = {}; // CS-v1.9 — setName -> true, 연타로 같은 세트에 중복 요청이 나가는 것을 막는다
 
   var MODE_HINTS = {
     local: '템플릿 조합으로 즉시 만듭니다. 문법은 정확하지만 스토리텔링 품질은 보통입니다.',
@@ -187,6 +204,49 @@
     return on ? '<span class="pill y">있음</span>' : '<span class="pill n">없음</span>';
   }
 
+  // CS-v1.9 — /api/generate와 /api/sets/:setName/regenerate 두 응답 모두
+  // 같은 모양(homeRoutes.js의 buildGenerationResult)이므로, 결과 표시도
+  // 한 함수로 공유한다. 따로 두면 한쪽만 고치고 잊는 사고가 난다.
+  function renderResultBody(d) {
+    var cov = d.coverage || {};
+    var html = '<div class="kv">'
+      + '<span><b>세트</b> ' + esc(d.setName) + '</span>'
+      + '<span><b>채널</b> ' + esc(d.channelId) + '</span>'
+      + '<span><b>곡</b> ' + esc(d.songCount) + '</span>'
+      + '<span><b>사전 커버리지</b> 명사 ' + esc(cov.nouns) + ' / 감정 ' + esc(cov.emotions) + '</span>'
+      + '<span><b>미지어</b> ' + esc(d.unknownTerms) + '건</span>'
+      + '</div>';
+    if (d.unmatchedEmotionArcs) {
+      html += '<div class="warn">emotionArc 파싱 실패 ' + esc(d.unmatchedEmotionArcs) + '건</div>';
+    }
+    var allWarnings = d.warnings || [];
+    var importantWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') === 0; });
+    var normalWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') !== 0; });
+    if (importantWarnings.length) {
+      html += '<div class="important-box"><b>중요</b><ul>';
+      for (var k = 0; k < importantWarnings.length && k < 30; k++) html += '<li>' + esc(importantWarnings[k]) + '</li>';
+      html += '</ul></div>';
+    }
+    if (normalWarnings.length) {
+      html += '<div class="warn">경고 ' + normalWarnings.length + '건<ul>';
+      for (var i = 0; i < normalWarnings.length && i < 30; i++) html += '<li>' + esc(normalWarnings[i]) + '</li>';
+      html += '</ul></div>';
+    }
+    if ((d.errors || []).length) {
+      html += '<div class="err">오류 ' + d.errors.length + '건<ul>';
+      for (var j = 0; j < d.errors.length && j < 30; j++) html += '<li>' + esc(d.errors[j]) + '</li>';
+      html += '</ul></div>';
+    }
+    // CS-v1.9 작업 C 요구사항 4 — usedFallback을 조용히 넘기지 않는다.
+    // Gemini를 골랐는데 호출 실패/파싱 실패 등으로 로컬 결과가 나간
+    // 상황이므로, 경고 줄과 별개로 눈에 띄는 박스로 한 번 더 알린다.
+    if (d.mode === 'gemini' && d.usedFallback) {
+      html += '<div class="fallback-banner">⚠ Gemini 대신 로컬(템플릿) 결과를 사용했습니다 — 위 경고에서 사유를 확인하세요.</div>';
+    }
+    html += '<p style="margin:10px 0 0"><a class="setlink" href="' + esc(d.packUrl) + '">복사 화면 열기 →</a></p>';
+    return html;
+  }
+
   function loadSets() {
     setsEl.innerHTML = '<div class="empty">불러오는 중…</div>';
     fetch('/social-studio/api/sets')
@@ -200,8 +260,17 @@
         var rows = '';
         for (var i = 0; i < sets.length && i < 500; i++) {
           var s = sets[i];
+          var nameCell;
+          if (s.hasSource) {
+            // CS-v1.9 작업 C — 원본이 있는 세트만 제목 클릭으로 재생성 가능.
+            nameCell = '<button type="button" class="setlink-btn regen-btn" data-set="' + esc(s.setName) + '">'
+              + esc(s.setName) + '</button>';
+          } else {
+            nameCell = '<span class="setname-disabled">' + esc(s.setName) + '</span>'
+              + '<div class="no-source-hint">원본 가사 파일이 없어 다시 생성할 수 없습니다. 위에서 파일을 올려 한 번 생성하면 이후로는 제목 클릭만으로 됩니다.</div>';
+          }
           rows += '<tr>'
-            + '<td><a class="setlink" href="/social-studio/pack/' + encodeURIComponent(s.setName) + '">' + esc(s.setName) + '</a></td>'
+            + '<td>' + nameCell + '</td>'
             + '<td>' + pill(s.hasTextpack) + '</td>'
             + '<td>' + pill(s.hasCards) + '</td>'
             + '<td>' + pill(s.hasLintReport) + '</td>'
@@ -209,9 +278,58 @@
         }
         setsEl.innerHTML = '<table><thead><tr><th>세트</th><th>텍스트 팩</th><th>카드</th><th>검사</th></tr></thead><tbody>'
           + rows + '</tbody></table>';
+
+        Array.prototype.forEach.call(setsEl.querySelectorAll('.regen-btn'), function (btn) {
+          btn.addEventListener('click', function () { onRegenClick(btn); });
+        });
       })
       .catch(function (e) {
         setsEl.innerHTML = '<div class="empty err">목록을 불러오지 못했습니다: ' + esc(e.message) + '</div>';
+      });
+  }
+
+  // CS-v1.9 작업 C — 제목 클릭 → 재생성 → 결과 표시. 성공/실패와 무관하게
+  // regenInFlight를 정리하고 버튼을 원래대로 되돌린다. usedFallback을
+  // 확인해야 하므로(요구사항 4) 완료 즉시 packUrl로 강제 이동하지 않고,
+  // /api/generate 성공 시와 같은 결과 박스(renderResultBody)를 먼저 보여준다
+  // — "복사 화면 열기" 링크는 그 안에 이미 있다.
+  function onRegenClick(btn) {
+    var setName = btn.getAttribute('data-set');
+    if (regenInFlight[setName]) return;
+    regenInFlight[setName] = true;
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = originalText + ' — 생성 중…';
+
+    regenResultEl.className = 'result show';
+    regenResultEl.innerHTML = '<b>' + esc(setName) + '</b> 다시 생성하는 중입니다… (Gemini 모드는 수 초에서 수십 초 걸릴 수 있습니다)';
+
+    fetch('/social-studio/api/sets/' + encodeURIComponent(setName) + '/regenerate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        delete regenInFlight[setName];
+        btn.disabled = false;
+        btn.textContent = originalText;
+        if (!res.ok) {
+          regenResultEl.className = 'result show bad';
+          regenResultEl.innerHTML = '<b class="err">재생성 실패:</b> ' + esc(res.d.error || '알 수 없는 오류');
+          return;
+        }
+        regenResultEl.className = 'result show';
+        regenResultEl.innerHTML = renderResultBody(res.d);
+        loadSets();
+      })
+      .catch(function (e) {
+        delete regenInFlight[setName];
+        btn.disabled = false;
+        btn.textContent = originalText;
+        regenResultEl.className = 'result show bad';
+        regenResultEl.innerHTML = '<b class="err">재생성 실패:</b> ' + esc(e.message);
       });
   }
 
@@ -249,44 +367,7 @@
           }
           var d = res.d;
           lastSetName = d.setName;
-          var cov = d.coverage || {};
-          var html = '<div class="kv">'
-            + '<span><b>세트</b> ' + esc(d.setName) + '</span>'
-            + '<span><b>채널</b> ' + esc(d.channelId) + '</span>'
-            + '<span><b>곡</b> ' + esc(d.songCount) + '</span>'
-            + '<span><b>사전 커버리지</b> 명사 ' + esc(cov.nouns) + ' / 감정 ' + esc(cov.emotions) + '</span>'
-            + '<span><b>미지어</b> ' + esc(d.unknownTerms) + '건</span>'
-            + '</div>';
-          if (d.unmatchedEmotionArcs) {
-            html += '<div class="warn">emotionArc 파싱 실패 ' + esc(d.unmatchedEmotionArcs) + '건</div>';
-          }
-          // TASK-S9 후속: /api/generate 응답의 warnings는 이미 서버에서
-          // normalized.set.warnings + textpack.warnings를 합치고 중복을
-          // 제거해서 온다(homeRoutes.js) — 화면은 [중요] 접두만 갈라서
-          // 붉은 상자로 분리하면 된다.
-          var allWarnings = d.warnings || [];
-          var importantWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') === 0; });
-          var normalWarnings = allWarnings.filter(function (w) { return w.indexOf('[중요]') !== 0; });
-          if (importantWarnings.length) {
-            html += '<div class="important-box"><b>중요</b><ul>';
-            for (var k = 0; k < importantWarnings.length && k < 30; k++) html += '<li>' + esc(importantWarnings[k]) + '</li>';
-            html += '</ul></div>';
-          }
-          if (normalWarnings.length) {
-            html += '<div class="warn">경고 ' + normalWarnings.length + '건<ul>';
-            for (var i = 0; i < normalWarnings.length && i < 30; i++) html += '<li>' + esc(normalWarnings[i]) + '</li>';
-            html += '</ul></div>';
-          }
-          if ((d.errors || []).length) {
-            html += '<div class="err">오류 ' + d.errors.length + '건<ul>';
-            for (var j = 0; j < d.errors.length && j < 30; j++) html += '<li>' + esc(d.errors[j]) + '</li>';
-            html += '</ul></div>';
-          }
-          if (d.mode === 'gemini' && d.usedFallback) {
-            html += '<div class="warn">Gemini 결과 대신 로컬 결과를 사용했습니다 (위 경고 참고).</div>';
-          }
-          html += '<p style="margin:10px 0 0"><a class="setlink" href="' + esc(d.packUrl) + '">복사 화면 열기 →</a></p>';
-          show(html, false);
+          show(renderResultBody(d), false);
 
           if (d.mode === 'export' && d.hasPrompt) {
             promptTextEl.value = d.prompt;
