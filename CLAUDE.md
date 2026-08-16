@@ -22,7 +22,7 @@
 | 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
 | 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
 
-현재 버전: **CS-v1.8**
+현재 버전: **CS-v1.9**
 
 ---
 
