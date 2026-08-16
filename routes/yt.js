@@ -150,6 +150,100 @@ function parseJsonText(text) {
   throw new Error('AI 응답을 JSON으로 해석하지 못했습니다.');
 }
 
+/*
+ * TASK CS-v1.7 — parseJsonText() above needs the WHOLE response to be valid
+ * JSON (even its bracket-matching recovery slices from the first `[`/`{` to
+ * the last `]`/`}`, which is still garbage if the response was cut off mid
+ * object). A response cut off by maxOutputTokens is exactly the failure mode
+ * we're now trying to survive, so /translate falls back to this scanner
+ * instead of failing the whole batch: walk the text once, string/escape
+ * aware, and collect only the `{...}` spans whose braces actually balance.
+ * A trailing object that got cut off never closes its final `}`, so it's
+ * simply never emitted — no half-parsed language makes it into the result.
+ */
+function salvageJsonObjects(text) {
+  const objects = [];
+  const raw = String(text || '');
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === '}') {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0 && start >= 0) {
+        try { objects.push(JSON.parse(raw.slice(start, i + 1))); } catch { /* malformed fragment, skip it */ }
+        start = -1;
+      }
+    }
+  }
+  return objects;
+}
+
+const TRANSLATE_RESPONSE_SCHEMA = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      language: { type: Type.STRING },
+      translatedTitle: { type: Type.STRING },
+      translatedDescription: { type: Type.STRING },
+    },
+    required: ['language', 'translatedTitle', 'translatedDescription'],
+  },
+};
+
+/*
+ * TASK CS-v1.7 — thinkingConfig:{thinkingBudget:0} turns off "thinking" so
+ * its tokens don't eat into maxOutputTokens on a plain translation, but not
+ * every model/account combo recognizes the field: those reject it with a
+ * 400 mentioning "thinking". That support is fixed for the life of this
+ * process (same model, same account), so remember it in a module-scope flag
+ * instead of re-discovering it on every call.
+ */
+let skipThinkingConfig = false;
+
+function isThinkingUnsupportedError(error) {
+  const status = Number(error?.status || error?.code || 0);
+  if (status !== 400) return false;
+  return /thinking/i.test(String(error?.message || ''));
+}
+
+async function generateTranslation(ai, prompt) {
+  const buildConfig = (includeThinking) => ({
+    responseMimeType: 'application/json',
+    responseSchema: TRANSLATE_RESPONSE_SCHEMA,
+    maxOutputTokens: 16384,
+    ...(includeThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+  });
+  const call = (includeThinking) => ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: buildConfig(includeThinking),
+  });
+
+  try {
+    return await withRetry(() => call(!skipThinkingConfig));
+  } catch (error) {
+    if (!skipThinkingConfig && isThinkingUnsupportedError(error)) {
+      skipThinkingConfig = true;
+      return withRetry(() => call(false));
+    }
+    throw error;
+  }
+}
+
 router.get('/status', (req, res) => {
   const hasGemini = Boolean(currentKey());
   res.json({
@@ -254,33 +348,36 @@ ${title}
 Original description:
 ${description}`;
 
-    const response = await withRetry(() => ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              language: { type: Type.STRING },
-              translatedTitle: { type: Type.STRING },
-              translatedDescription: { type: Type.STRING },
-            },
-            required: ['language', 'translatedTitle', 'translatedDescription'],
-          },
-        },
-      },
-    }));
-    const parsed = parseJsonText(response.text);
-    if (!Array.isArray(parsed)) throw new Error('번역 결과 형식이 올바르지 않습니다.');
+    const response = await generateTranslation(ai, prompt);
+
+    let parsed;
+    let truncated = false;
+    try {
+      parsed = parseJsonText(response.text);
+      if (!Array.isArray(parsed)) throw new Error('번역 결과 형식이 올바르지 않습니다.');
+    } catch (parseError) {
+      // TASK CS-v1.7 — response.text failed to parse whole; see if it was
+      // just cut off mid-array and we can still salvage the complete
+      // objects at the front of it instead of failing every language in
+      // this batch over one that ran long.
+      const salvaged = salvageJsonObjects(response.text);
+      if (!salvaged.length) throw parseError;
+      parsed = salvaged;
+      truncated = true;
+    }
     const normalized = parsed.map((item, index) => ({
       language: languages[index] || String(item.language || ''),
       translatedTitle: String(item.translatedTitle || '').trim().slice(0, 100),
       translatedDescription: String(item.translatedDescription || '').trim(),
     }));
-    res.json({ results: normalized, model: MODEL });
+    const recoveredLanguages = new Set(normalized.map((r) => r.language));
+    const missingLanguages = truncated ? languages.filter((lang) => !recoveredLanguages.has(lang)) : [];
+    res.json({
+      results: normalized,
+      model: MODEL,
+      truncated,
+      missingLanguages,
+    });
   } catch (error) {
     next(error);
   }
