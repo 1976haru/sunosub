@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { Type } from '@google/genai';
-import { requireGeminiClient, withRetry } from '../lib/gemini.js';
+import { requireGeminiClient, withRetry, isRateLimitError, isServerError } from '../lib/gemini.js';
 import { currentKey } from '../lib/keyStore.js';
 import { extractKeyless, fallbackOEmbed } from '../lib/ytKeyless.js';
 import {
@@ -77,6 +77,15 @@ async function extractWithYouTubeApi(videoId) {
   };
 }
 
+/*
+ * TASK CS-v1.7 — whether this account/model accepts urlContext+googleSearch
+ * together is fixed for the life of the process (it's an account/model
+ * property, not a per-request fluke), so remember the answer here instead
+ * of re-probing on every call: null = not yet known, true = combined tools
+ * work, false = this account/model rejects the combined form.
+ */
+let extractToolsMode = null;
+
 async function extractWithGemini(url) {
   const ai = requireGeminiClient();
   const prompt = `You are extracting public metadata from one YouTube video page.
@@ -96,29 +105,32 @@ YouTube URL: ${url}`;
     required: ['title', 'description'],
   };
 
+  const callGemini = (useCombinedTools) => ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: useCombinedTools ? [{ urlContext: {} }, { googleSearch: {} }] : [{ googleSearch: {} }],
+      responseMimeType: 'application/json',
+      responseSchema: schema,
+    },
+  });
+
   const response = await withRetry(async () => {
+    const useCombinedTools = extractToolsMode !== false;
     try {
-      return await ai.models.generateContent({
-        model: MODEL,
-        contents: prompt,
-        config: {
-          tools: [{ urlContext: {} }, { googleSearch: {} }],
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        },
-      });
-    } catch {
-      // Some account/model combinations restrict combining urlContext with
-      // search at once; retry with search only before giving up.
-      return ai.models.generateContent({
-        model: MODEL,
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        },
-      });
+      const result = await callGemini(useCombinedTools);
+      if (useCombinedTools) extractToolsMode = true;
+      return result;
+    } catch (error) {
+      // TASK CS-v1.7 — a 429/5xx here means we're rate-limited or Google is
+      // struggling, not that the tool combination is unsupported. Rethrowing
+      // lets withRetry back off and retry once; falling through to a second
+      // call instead (the old behavior) doubled the request rate at exactly
+      // the moment we'd already hit the limit.
+      if (isRateLimitError(error) || isServerError(error)) throw error;
+      if (!useCombinedTools) throw error; // already on the fallback form — nothing left to try
+      extractToolsMode = false;
+      return callGemini(false);
     }
   });
 
