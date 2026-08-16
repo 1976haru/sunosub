@@ -138,6 +138,22 @@ function setupKeyDialog() {
   };
   $('paidKeySaveBtn').addEventListener('click', submitPaid);
   paidInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') submitPaid(); });
+
+  // TASK CS-v2.0 — 도구 iframe(예: tools/yt)이 유료 키 입력 다이얼로그를
+  // 열어달라고 요청할 수 있게 한다. CLAUDE.md 3.4대로 postMessage 중계이고,
+  // origin을 반드시 검증한다(이 앱은 항상 같은 오리진에서 서빙되지만, 관례를
+  // 그대로 따른다).
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data?.type === 'creator-studio:open-paid-key-dialog') {
+      input.value = '';
+      error.classList.add('hidden');
+      paidInput.value = '';
+      paidError.classList.add('hidden');
+      dialog.showModal();
+      paidInput.focus();
+    }
+  });
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {

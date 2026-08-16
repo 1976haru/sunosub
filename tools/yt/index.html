@@ -82,6 +82,16 @@
           <button id="translateConfirmNoBtn" class="btn secondary">취소</button>
         </div>
       </div>
+      <!-- TASK CS-v2.0 작업 A — 무료 한도 초과(429)로 멈췄을 때 뜨는 선택지.
+           문구·버튼 표시 여부는 showQuotaChoice()가 유료 키 유무에 따라 채운다. -->
+      <div id="quotaChoice" class="alert hidden">
+        <p id="quotaChoiceText"></p>
+        <div class="toolbar" style="margin-top:8px">
+          <button id="quotaChoicePaidBtn" class="btn primary hidden">유료 키로 이어서 번역</button>
+          <button id="quotaChoiceSetupBtn" class="btn primary hidden">유료 키 설정하기</button>
+          <button id="quotaChoiceLaterBtn" class="btn secondary">나중에 하기</button>
+        </div>
+      </div>
       <button id="translateBtn" class="btn primary wide">선택 언어 번역 시작</button>
       <!-- TASK CS-v1.8 — only shown once there are results and something selected still isn't in them (untried or dropped by a truncated batch); JS toggles .hidden -->
       <button id="continueTranslateBtn" class="btn secondary wide hidden">이어서 번역</button>

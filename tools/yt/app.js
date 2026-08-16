@@ -57,7 +57,15 @@ async function api(path, options = {}) {
     ...options,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `요청 실패 (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(data.error || `요청 실패 (${response.status})`);
+    // TASK CS-v2.0 — /api/yt/translate의 429 응답은 error 문자열 말고도
+    // quotaExhausted/missingLanguages/paidKeyConfigured/quotaScope/results 같은
+    // 구조화된 필드를 함께 보낸다(routes/yt.js). 여기서 실려 보내야 호출부가
+    // error.message 말고 이 필드들도 읽을 수 있다.
+    Object.assign(error, data);
+    throw error;
+  }
   return data;
 }
 
@@ -289,9 +297,10 @@ function updateContinueButton() {
 }
 
 /** Shared by both the "번역" and "이어서 번역" buttons — only which languages get sent, and whether prior results are wiped first, differs. */
-async function runTranslateBatches(languagesToProcess, { resetResults }) {
+async function runTranslateBatches(languagesToProcess, { resetResults, forcePaid = false }) {
   if (state.translating || !state.geminiConfigured) return;
   hideTranslateConfirm();
+  hideQuotaChoice();
   const title = $('sourceTitle').value.trim();
   const description = $('sourceDescription').value;
   if (!title) return setError('translateError', '원문 제목을 입력해 주세요.');
@@ -322,7 +331,7 @@ async function runTranslateBatches(languagesToProcess, { resetResults }) {
       $('progressBar').style.width = `${Math.round((i / batches.length) * 100)}%`;
       const data = await api('/api/yt/translate', {
         method: 'POST',
-        body: JSON.stringify({ title, description, languages: batch }),
+        body: JSON.stringify({ title, description, languages: batch, ...(forcePaid ? { forcePaid: true } : {}) }),
       });
       cacheHitCount += data.fromCache?.length || 0;
       if (data.missingLanguages?.length) missingTotal.push(...data.missingLanguages);
@@ -342,8 +351,21 @@ async function runTranslateBatches(languagesToProcess, { resetResults }) {
       ? `번역 완료. ${missingTotal.length}개 언어는 출력이 잘려 받지 못했습니다 — "이어서 번역"으로 다시 시도하세요.`
       : `번역이 완료되었습니다.${cacheNote}`);
   } catch (error) {
-    const remaining = pendingLanguages(languagesToProcess).length;
-    setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. 다음 묶음에서 오류가 발생했습니다: ${error.message}`);
+    // TASK CS-v2.0 작업 A 요구사항 2 — 429로 멈춘 것과 그 외 오류(네트워크
+    // 끊김, 서버 오류 등)는 다르게 다룬다: 무료 한도 소진은 "재시도 선택지"를
+    // 보여줄 수 있는 상황이지 그냥 실패가 아니다. error.results는 이번에
+    // 실패한 배치 안에서도 캐시로 이미 맞춘 언어들이므로 먼저 반영한다 —
+    // 그렇지 않으면 이 배치의 캐시 히트가 화면에서 사라진다.
+    if (error.quotaExhausted) {
+      upsertResults(error.results || []);
+      renderResults();
+      saveLocal();
+      setError('translateError');
+      showQuotaChoice(pendingLanguages(languagesToProcess), error);
+    } else {
+      const remaining = pendingLanguages(languagesToProcess).length;
+      setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. 다음 묶음에서 오류가 발생했습니다: ${error.message}`);
+    }
   } finally {
     state.translating = false;
     $('translateBtn').disabled = !state.geminiConfigured;
@@ -380,6 +402,49 @@ function showTranslateConfirm(count, selected) {
 
 function hideTranslateConfirm() {
   $('translateConfirm').classList.add('hidden');
+}
+
+/*
+ * TASK CS-v2.0 작업 A 요구사항 2 — 무료 한도 초과로 멈췄을 때 뜨는 선택지.
+ * 유료 키 유무에 따라 문구와 버튼이 달라진다. 유료 키가 없으면 "유료로
+ * 이어서" 버튼 자체를 숨긴다 — 눌러도 무료 키로 폴백되어 또 429가 날
+ * 뿐이므로, 누를 수 있게 보여주는 것 자체가 오해를 만든다(지시서 요구사항
+ * 2의 명시적 요구).
+ */
+function quotaScopeNote(error) {
+  // TASK CS-v2.0 — dailyLimitReached는 우리 앱 자체의 .gemini_limits.json
+  // 상한(유료 키가 있어도 걸림)이라 quotaScope(구글 쪽 RPM/RPD 추정)와
+  // 별개로 먼저 확인한다 — 이 경우 "유료로 이어서"를 눌러도 똑같이 즉시
+  // 막히므로 다른 안내가 필요하다.
+  if (error.dailyLimitReached) {
+    return ' 이 도구에 설정된 유료 일일 상한(.gemini_limits.json)에 도달했습니다 — 내일 다시 시도하거나 상한 값을 늘려주세요.';
+  }
+  if (error.quotaScope === 'daily') return ' 하루 요청 한도로 보입니다.';
+  if (error.quotaScope === 'per-minute') return ' 분당 요청 한도로 보입니다 — 1~2분 후 다시 시도하면 무료로 계속할 수 있습니다.';
+  return ' 분당 한도인지 하루 한도인지 이번 응답만으로는 확인되지 않았습니다 — 1~2분 후 다시 시도해 보고, 계속 실패하면 하루 한도일 가능성이 큽니다.';
+}
+
+function showQuotaChoice(pendingList, error) {
+  const box = $('quotaChoice');
+  const n = pendingList.length;
+  const note = quotaScopeNote(error);
+  const offerPaidRetry = state.paidKeyConfigured && !error.dailyLimitReached;
+
+  $('quotaChoicePaidBtn').classList.toggle('hidden', !offerPaidRetry);
+  $('quotaChoiceSetupBtn').classList.toggle('hidden', state.paidKeyConfigured || error.dailyLimitReached);
+
+  $('quotaChoiceText').textContent = offerPaidRetry
+    ? `무료 한도를 모두 썼습니다.${note} 남은 ${n}개 언어를 유료 키로 이어서 번역할까요? 비용이 발생합니다.`
+    : state.paidKeyConfigured
+      ? `무료·유료 모두 오늘 한도에 도달했습니다.${note} 남은 언어는 ${n}개입니다.`
+      : `무료 한도를 모두 썼습니다.${note} 남은 ${n}개 언어는 내일 다시 시도하거나, 유료 키를 설정하면 지금 바로 이어서 할 수 있습니다.`;
+
+  box.dataset.pendingLanguages = JSON.stringify(pendingList);
+  box.classList.remove('hidden');
+}
+
+function hideQuotaChoice() {
+  $('quotaChoice').classList.add('hidden');
 }
 
 async function onTranslateClick() {
@@ -622,6 +687,22 @@ function setupEvents() {
     await runTranslateBatches(selected, { resetResults: true });
   });
   $('translateConfirmNoBtn').addEventListener('click', hideTranslateConfirm);
+  // TASK CS-v2.0 작업 A — 남은 언어(quotaChoice에 저장해둔 목록)만 forcePaid로
+  // 다시 보낸다. resetResults:false — 이미 성공한 언어는 그대로 둔다.
+  $('quotaChoicePaidBtn').addEventListener('click', async () => {
+    const pending = JSON.parse($('quotaChoice').dataset.pendingLanguages || '[]');
+    hideQuotaChoice();
+    await runTranslateBatches(pending, { resetResults: false, forcePaid: true });
+  });
+  // TASK CS-v2.0 — 셸의 키 다이얼로그는 이 iframe과 다른 문서다
+  // (public/index.html). CLAUDE.md 3.4대로 postMessage로 부모(셸)에 요청하고
+  // origin을 명시한다 — 같은 오리진에서만 서빙되는 앱이지만, 관례를 그대로
+  // 따른다.
+  $('quotaChoiceSetupBtn').addEventListener('click', () => {
+    hideQuotaChoice();
+    window.parent.postMessage({ type: 'creator-studio:open-paid-key-dialog' }, window.location.origin);
+  });
+  $('quotaChoiceLaterBtn').addEventListener('click', hideQuotaChoice);
   $('exportCsvBtn').addEventListener('click', exportCsv);
   $('exportJsonBtn').addEventListener('click', exportJson);
   $('copyAllBtn').addEventListener('click', copyAll);

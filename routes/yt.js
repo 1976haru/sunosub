@@ -450,6 +450,18 @@ router.post('/translate', async (req, res, next) => {
     const title = String(req.body?.title || '').trim();
     const description = String(req.body?.description || '');
     const languages = Array.isArray(req.body?.languages) ? req.body.languages.map(String).filter(Boolean) : [];
+    // TASK CS-v2.0 작업 A 요구사항 4 — forcePaid는 "사용자가 비용을 감수하고
+    // 누른 버튼"의 신호다. effectiveTier()의 자동 판단(유료 키가 있으면
+    // paid)은 그대로 두되, 유료 키가 실제로 없는데 forcePaid가 오면 무료로
+    // 조용히 폴백하지 않고 여기서 즉시 거부한다 — 폴백되면 방금 쓴 무료
+    // 한도를 또 그대로 소진해 같은 429가 나고, 사용자는 "유료를 눌렀는데
+    // 왜 안 되지"라고 오해한다.
+    const forcePaid = Boolean(req.body?.forcePaid);
+    if (forcePaid && !hasPaidKey()) {
+      return res.status(400).json({
+        error: '유료 키가 설정되어 있지 않아 유료로 이어서 번역할 수 없습니다. 상단 배지에서 유료 키를 먼저 설정해 주세요.',
+      });
+    }
     if (!title) return res.status(400).json({ error: '번역할 제목이 없습니다.' });
     if (!languages.length) return res.status(400).json({ error: '번역 언어를 하나 이상 선택해 주세요.' });
     // TASK CS-v1.7 — was `> 10`, hardcoded back when the client always sent
@@ -487,9 +499,39 @@ router.post('/translate', async (req, res, next) => {
     let missingLanguages = [];
 
     if (languagesToFetch.length > 0) {
-      const ai = requireGeminiClient('paid');
-      const prompt = buildTranslatePrompt(title, description, languagesToFetch);
-      const response = await generateTranslation(ai, prompt);
+      let response;
+      try {
+        const ai = requireGeminiClient('paid');
+        const prompt = buildTranslatePrompt(title, description, languagesToFetch);
+        response = await generateTranslation(ai, prompt);
+      } catch (geminiError) {
+        // TASK CS-v2.0 작업 A 요구사항 1 — 429는 요청 전체를 그냥 끝내지
+        // 않는다. requireGeminiClient가 던지는 일일 상한(dailyLimitReached)과
+        // withRetry가 재시도를 다 쓰고 던지는 일반 429를 여기서 함께 받아,
+        // "아직 캐시에 없어서 이번에 실패한" languagesToFetch를
+        // missingLanguages로, 캐시에서는 이미 맞춘 cachedResults를 results로
+        // 돌려준다 — 화면이 "유료로 이어서" 선택지를 띄우는 데 필요한
+        // 정보다. dailyLimitReached는 우리 앱 자체의 .gemini_limits.json
+        // 상한이라 quotaScope와 별개 필드로 구분해 알린다(요구사항 5) — 이
+        // 경우 유료로 다시 눌러도 똑같이 즉시 막히므로 화면에서 그 사실을
+        // 따로 표시할 수 있어야 한다.
+        if (Number(geminiError?.status) === 429) {
+          const byLanguage = new Map();
+          for (const result of cachedResults) byLanguage.set(result.language, result);
+          const partialResults = languages.map((lang) => byLanguage.get(lang)).filter(Boolean);
+          return res.status(429).json({
+            error: geminiError.message,
+            quotaExhausted: true,
+            quotaScope: geminiError.dailyLimitReached ? 'daily' : (geminiError.quotaScope || 'unknown'),
+            dailyLimitReached: Boolean(geminiError.dailyLimitReached),
+            missingLanguages: languagesToFetch,
+            paidKeyConfigured: hasPaidKey(),
+            results: partialResults,
+            fromCache: cachedResults.map((result) => result.language),
+          });
+        }
+        throw geminiError;
+      }
 
       let parsed;
       try {
