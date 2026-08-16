@@ -287,13 +287,31 @@ router.post('/extract', async (req, res, next) => {
 
     if (!result) {
       if (hasGemini) {
+        // TASK CS-v1.7 — title/description are sitting right there in the
+        // watch page (lib/ytKeyless.js already does this for the no-key
+        // path), so try that free, unofficial parse before spending a
+        // urlContext+googleSearch Gemini call on it. Only accept it when
+        // BOTH fields came back non-empty; a partial result (page layout
+        // Google changed, og:description missing, etc.) falls straight
+        // through to the exact same Gemini -> oEmbed chain as before, so
+        // accuracy never regresses, only the common case gets cheaper.
+        let keylessResult = null;
         try {
-          result = await extractWithGemini(canonicalUrl);
-        } catch (geminiError) {
-          const fallback = await fallbackOEmbed(canonicalUrl).catch(() => null);
-          if (!fallback) throw geminiError;
-          result = fallback;
-          result.warning = `설명 추출 실패: ${geminiError.message}`;
+          const candidate = await extractKeyless(canonicalUrl);
+          if (candidate?.title && candidate?.description) keylessResult = candidate;
+        } catch { /* unofficial parse failed — Gemini below is still the fallback */ }
+
+        if (keylessResult) {
+          result = keylessResult;
+        } else {
+          try {
+            result = await extractWithGemini(canonicalUrl);
+          } catch (geminiError) {
+            const fallback = await fallbackOEmbed(canonicalUrl).catch(() => null);
+            if (!fallback) throw geminiError;
+            result = fallback;
+            result.warning = `설명 추출 실패: ${geminiError.message}`;
+          }
         }
       } else {
         try {
