@@ -3,6 +3,7 @@ storyboard-app/node_modules/
 storyboard-app/dist/
 tools/storyboard/
 output/
+tools/social-studio/out/
 .gemini_key
 .gemini_key_paid
 .gemini_usage.json
