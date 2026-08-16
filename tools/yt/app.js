@@ -29,6 +29,10 @@ const state = {
   sourceMeta: null,
   translating: false,
   geminiConfigured: false,
+  // TASK CS-v1.8 follow-up — drives the confirm-box/regenerate-button
+  // wording: "비용이 발생합니다" only makes sense when a paid key is
+  // actually configured. Set from /api/yt/status in loadStatus().
+  paidKeyConfigured: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -89,6 +93,7 @@ async function loadStatus() {
   try {
     const status = await api('/api/yt/status');
     state.geminiConfigured = Boolean(status.geminiConfigured);
+    state.paidKeyConfigured = Boolean(status.paidKeyConfigured);
     const usage = status.geminiUsageToday;
     // TASK CS-v1.7 — reference-only badge: this PC's 5 tools combined, today.
     // Doesn't gate anything (lib/geminiUsage.js is display-only by design);
@@ -355,8 +360,20 @@ async function runTranslateBatches(languagesToProcess, { resetResults }) {
  * dark-themed alert box matching translateGate/mainError's existing style
  * doesn't have that problem and looks like it belongs on this page.
  */
+// TASK CS-v1.8 follow-up — "비용이 발생합니다" only makes sense when a paid
+// key is actually configured (translate/regenerate run on the free key
+// otherwise — see lib/gemini.js's effectiveTier()); showing a cost warning
+// on a free call just confused users who hadn't set one up.
+function costPhrase() {
+  return state.paidKeyConfigured ? '비용이 발생합니다' : '무료 한도를 사용합니다';
+}
+function costActionLabel() {
+  return state.paidKeyConfigured ? '비용 발생' : '무료 한도 사용';
+}
+
 function showTranslateConfirm(count, selected) {
-  $('translateConfirmText').textContent = `${count}개 언어를 다시 번역합니다. 비용이 발생합니다. 계속할까요?`;
+  $('translateConfirmText').textContent = `${count}개 언어를 다시 번역합니다. ${costPhrase()}. 계속할까요?`;
+  $('translateConfirmYesBtn').textContent = `계속 진행 (${costActionLabel()})`;
   $('translateConfirm').dataset.pendingSelected = JSON.stringify(selected);
   $('translateConfirm').classList.remove('hidden');
 }
@@ -461,7 +478,7 @@ function renderResults() {
         const alreadyRegeneratedForThisText = result._regenSourceKey[field] === sourceKey;
         if (alreadyRegeneratedForThisText && button.dataset.confirmArmed !== '1') {
           button.dataset.confirmArmed = '1';
-          button.textContent = '다시 누르면 재생성 (비용)';
+          button.textContent = `다시 누르면 재생성 (${costActionLabel()})`;
           clearTimeout(button._confirmTimer);
           button._confirmTimer = setTimeout(() => {
             delete button.dataset.confirmArmed;

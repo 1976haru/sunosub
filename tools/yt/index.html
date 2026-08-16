@@ -74,11 +74,11 @@
         <input id="languageSearch" class="language-search" type="search" placeholder="언어 검색" />
       </div>
       <div id="languageGrid" class="language-grid"></div>
-      <!-- TASK CS-v1.8 — inline confirm instead of window.confirm(): shown before re-running a selection that overlaps existing results ("비용이 발생합니다") -->
+      <!-- TASK CS-v1.8 — inline confirm instead of window.confirm(): shown before re-running a selection that overlaps existing results. TASK CS-v1.8 follow-up — text/button label set dynamically by showTranslateConfirm() based on whether a paid key is configured, so this static label is just a placeholder before JS fills it in. -->
       <div id="translateConfirm" class="alert hidden">
         <p id="translateConfirmText"></p>
         <div class="toolbar" style="margin-top:8px">
-          <button id="translateConfirmYesBtn" class="btn primary">계속 진행 (비용 발생)</button>
+          <button id="translateConfirmYesBtn" class="btn primary">계속 진행</button>
           <button id="translateConfirmNoBtn" class="btn secondary">취소</button>
         </div>
       </div>
