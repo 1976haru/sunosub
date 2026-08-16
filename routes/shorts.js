@@ -109,7 +109,7 @@ async function generateJson(prompt, temperature = 0.8) {
       temperature,
       maxOutputTokens: 20000,
     },
-  }));
+  }), { label: 'shorts/text' });
   return parseJson(getText(response));
 }
 
@@ -287,7 +287,7 @@ Strict requirements: ${aspectRatio} aspect ratio, full-bleed composition, no spl
         responseModalities: ['IMAGE'],
         imageConfig: { aspectRatio, imageSize: '1K' },
       },
-    }));
+    }), { label: 'shorts/image' });
     const image = extractInlineImage(response);
     const ext = mimeExtension(image.mimeType);
     const safeFolder = ['characters', 'images', 'uploads'].includes(folder) ? folder : 'images';
@@ -314,7 +314,7 @@ router.post('/edit-image', async (req, res, next) => {
         ],
       }],
       config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '1K' } },
-    }));
+    }), { label: 'shorts/image-edit' });
     const image = extractInlineImage(response);
     const ext = mimeExtension(image.mimeType);
     const filePath = path.join(dir, 'images', `${safeName(name)}.${ext}`);
@@ -350,7 +350,7 @@ router.post('/video', async (req, res, next) => {
       prompt: `${prompt}\nCreate one continuous story-short shot. No captions, no on-screen text, no watermark. Preserve the character and composition from the starting image.`,
       image: { imageBytes: bytes.toString('base64'), mimeType },
       config: { numberOfVideos: 1, resolution: '720p', aspectRatio },
-    }));
+    }), { label: 'shorts/video' });
     const deadline = Date.now() + 25 * 60 * 1000;
     while (!operation.done) {
       if (Date.now() > deadline) throw new Error('영상 생성 대기 시간이 25분을 초과했습니다. 잠시 후 다시 시도해 주세요.');

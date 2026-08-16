@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Type } from '@google/genai';
 import { requireGeminiClient, withRetry, isRateLimitError, isServerError } from '../lib/gemini.js';
+import { getTodayGeminiUsage } from '../lib/geminiUsage.js';
 import { currentKey } from '../lib/keyStore.js';
 import { extractKeyless, fallbackOEmbed } from '../lib/ytKeyless.js';
 import {
@@ -132,7 +133,7 @@ YouTube URL: ${url}`;
       extractToolsMode = false;
       return callGemini(false);
     }
-  });
+  }, { label: 'yt/extract' });
 
   if (!response.text) throw new Error('Gemini로부터 추출 결과를 받지 못했습니다.');
   const parsed = JSON.parse(response.text);
@@ -246,11 +247,11 @@ async function generateTranslation(ai, prompt) {
   });
 
   try {
-    return await withRetry(() => call(!skipThinkingConfig));
+    return await withRetry(() => call(!skipThinkingConfig), { label: 'yt/translate' });
   } catch (error) {
     if (!skipThinkingConfig && isThinkingUnsupportedError(error)) {
       skipThinkingConfig = true;
-      return withRetry(() => call(false));
+      return withRetry(() => call(false), { label: 'yt/translate' });
     }
     throw error;
   }
@@ -264,6 +265,10 @@ router.get('/status', (req, res) => {
     geminiConfigured: hasGemini,
     youtubeApiConfigured: Boolean(cleanEnv(process.env.YOUTUBE_API_KEY)),
     mode: hasGemini ? 'gemini' : 'keyless',
+    // TASK CS-v1.7 — reference-only: today's Gemini usage across all 5 tools
+    // that share this key (lib/geminiUsage.js), not just this one. Doesn't
+    // gate anything; the account-wide truth is Google AI Studio's dashboard.
+    geminiUsageToday: getTodayGeminiUsage(),
   });
 });
 
@@ -432,7 +437,7 @@ router.post('/regenerate', async (req, res, next) => {
       ? `Translate and rewrite this YouTube title naturally in ${language}. Maximum 100 Unicode characters. Preserve [playlist] and emojis. Return only the title, with no quotes or explanation.\n\nOriginal title:\n${title}`
       : `Translate and rewrite this YouTube description naturally in ${language}. Translate normal hashtags, preserve emojis, URLs, timestamps, and track-list song-title lines exactly. Return only the description, with no explanation.\n\nOriginal description:\n${description}`;
 
-    const response = await withRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }));
+    const response = await withRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }), { label: 'yt/regenerate' });
     const text = String(response.text || '').trim();
     if (!text) throw new Error('재생성 결과가 비어 있습니다.');
     res.json({ text: field === 'title' ? text.slice(0, 100) : text });

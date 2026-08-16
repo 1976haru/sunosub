@@ -215,7 +215,7 @@ async function requestTitleCandidates(ai, titles, target, rejected) {
         },
       },
     },
-  }));
+  }), { label: 'timeline/translate-titles' });
   const parsed = JSON.parse(String(response.text || '[]'));
   if (!Array.isArray(parsed)) throw httpError('AI 응답 형식이 올바르지 않습니다.', 502);
   // Index-keyed rather than positional: a short or reordered response then

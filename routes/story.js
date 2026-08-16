@@ -42,7 +42,7 @@ router.post('/topics', async (req, res, next) => {
         topK: 40,
         topP: 0.95,
       },
-    }));
+    }), { label: 'story/topics' });
 
     const jsonText = response.text;
     if (!jsonText) throw new Error('No text found in generate topics response.');
@@ -91,7 +91,7 @@ router.post('/chapters', async (req, res, next) => {
         topK: 40,
         topP: 0.95,
       },
-    }));
+    }), { label: 'story/chapters' });
 
     const jsonText = response.text;
     if (!jsonText) throw new Error('No JSON response found for chapter generation.');

@@ -109,14 +109,14 @@ async function generateImage(ai, contents, aspectRatio, imageSize) {
       model: IMAGE_MODEL,
       contents,
       config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize } },
-    }));
+    }), { label: 'thumbnail/image' });
   } catch (error) {
     if (imageSize !== '1K' && isImageSizeRejection(error)) {
       return withRetry(() => ai.models.generateContent({
         model: IMAGE_MODEL,
         contents,
         config: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '1K' } },
-      }));
+      }), { label: 'thumbnail/image' });
     }
     throw error;
   }
@@ -210,7 +210,7 @@ JSON만 출력 (줄바꿈은 lines 배열 항목으로 분리, 문자열 안에 
       model: TEXT_MODEL,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: { responseMimeType: 'application/json', temperature: 0.95, maxOutputTokens: 2048 },
-    }));
+    }), { label: 'thumbnail/copy' });
     const parsed = parseJson(getText(response));
     const raw = Array.isArray(parsed.candidates) ? parsed.candidates : [];
     const avoidSet = new Set(avoid.map((v) => String(v).trim()));

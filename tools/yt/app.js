@@ -74,10 +74,18 @@ async function loadStatus() {
   try {
     const status = await api('/api/yt/status');
     state.geminiConfigured = Boolean(status.geminiConfigured);
+    const usage = status.geminiUsageToday;
+    // TASK CS-v1.7 — reference-only badge: this PC's 5 tools combined, today.
+    // Doesn't gate anything (lib/geminiUsage.js is display-only by design);
+    // the actual limit is whatever Google AI Studio's dashboard says.
+    const usageBadge = usage
+      ? `<span class="badge" title="오늘 이 PC의 5개 도구 합산 호출 수 · 참고용, 실제 한도는 Google AI Studio 대시보드 기준">오늘 Gemini 호출 ${usage.total}회${usage.failed ? ` (실패 ${usage.failed})` : ''}</span>`
+      : '';
     $('statusBadges').innerHTML = `
       <span class="badge ${status.geminiConfigured ? 'ok' : 'warn'}">Gemini ${status.geminiConfigured ? '설정됨' : '키 필요'}</span>
       <span class="badge ${status.youtubeApiConfigured ? 'ok' : 'warn'}">YouTube API ${status.youtubeApiConfigured ? '설정됨' : '선택 사항'}</span>
-      <span class="badge">${escapeHtml(status.model)}</span>`;
+      <span class="badge">${escapeHtml(status.model)}</span>
+      ${usageBadge}`;
     applyTranslateGate();
   } catch (error) {
     $('statusBadges').innerHTML = '<span class="badge warn">서버 상태 확인 실패</span>';

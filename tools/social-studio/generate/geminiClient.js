@@ -71,7 +71,7 @@ export async function runGeminiStorytelling(normalized, localTextpack) {
     const ai = requireGeminiClient();
     const response = await withRetry(
       () => ai.models.generateContent({ model: config.model, contents: prompt }),
-      { retries: config.maxRetries ?? 3 }
+      { retries: config.maxRetries ?? 3, label: 'social-studio/storytelling' }
     );
     recordGeminiRequest();
     responseText = response?.text ?? response?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
