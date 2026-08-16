@@ -55,7 +55,20 @@ const OUTPUT_LANGUAGE_LABELS = { ko: '한국어', ja: '일본어' };
 // unbounded loop below (TASK-S0 completion condition #9).
 const MAX_SONGS_PER_SET = 500;
 
-class SetPackValidationError extends Error {}
+/*
+ * TASK CS-v2.0 후속 — status:400을 여기 한 곳에서 세팅한다. 이 클래스가
+ * 던져지는 모든 곳(JSON 파싱 실패, 필수 필드 누락, lyricLanguage 오류,
+ * channelId 매핑 실패 등)이 전부 "사용자가 잘못된 입력을 올렸다"는 뜻이지
+ * 서버 쪽 문제가 아니다. server.js의 공용 에러 미들웨어가
+ * error.status(기본 500)만 보고 HTTP 상태를 정하므로, 여기서 지정하면
+ * homeRoutes.js 쪽은 손댈 필요가 없다.
+ */
+class SetPackValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.status = 400;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 1. Load + validate
@@ -64,7 +77,15 @@ class SetPackValidationError extends Error {}
 /** Reads a setpack JSON file from disk, stripping a leading BOM if present. */
 export function readSetPackFile(filePath) {
   const raw = fs.readFileSync(filePath, 'utf8').replace(/^﻿/, '');
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    // TASK CS-v2.0 후속 — JSON.parse의 원본 메시지("Unexpected token 'o'...")는
+    // 내부 파서 용어라 사용자에게 의미가 없다. 원본은 서버 로그에만 남기고,
+    // 응답에는 사람이 읽을 수 있는 안내만 내보낸다.
+    console.error('[social-studio] 가사 JSON 파싱 실패:', error.message);
+    throw new SetPackValidationError('가사 JSON 파일 형식이 올바르지 않습니다. 올바른 JSON 파일인지 확인해 주세요.');
+  }
 }
 
 /**
@@ -87,7 +108,11 @@ export function validateSetPack(data) {
     }
   }
   if (!ALLOWED_LYRIC_LANGUAGES.has(data.meta.lyricLanguage)) {
-    throw new SetPackValidationError(`meta.lyricLanguage 값이 올바르지 않습니다: ${data.meta.lyricLanguage}`);
+    // TASK CS-v2.0 후속 — 허용값을 하드코딩한 문자열이 아니라 ALLOWED_LYRIC_LANGUAGES
+    // 자체에서 뽑아서, 나중에 그 목록이 바뀌어도 이 안내 메시지가 따로 어긋나지 않는다.
+    throw new SetPackValidationError(
+      `meta.lyricLanguage 값이 올바르지 않습니다: ${data.meta.lyricLanguage} (허용값: ${[...ALLOWED_LYRIC_LANGUAGES].join(', ')})`
+    );
   }
   if (!Array.isArray(data.songs) || data.songs.length === 0) {
     throw new SetPackValidationError('songs 배열이 비어 있거나 없습니다.');
