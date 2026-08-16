@@ -775,7 +775,14 @@ router.get('/my-videos', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-/** Current localizations already on a video — lets the user see what will be added vs overwritten. */
+/**
+ * Current localizations already on a video — lets the user see what will be
+ * added vs overwritten before publishing, AND (TASK CS-v2.0 작업 B) lets the
+ * client re-read this same endpoint right after a publish to confirm what
+ * actually landed. videos.list costs 1 unit regardless of how many
+ * localizations come back, vs videos.update's 50 — a second read right after
+ * every publish is negligible against the 10,000/day default (CLAUDE.md 4.4).
+ */
 router.get('/localizations', async (req, res, next) => {
   try {
     const videoId = extractVideoId(String(req.query.videoId || ''));

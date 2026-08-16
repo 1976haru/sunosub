@@ -887,9 +887,50 @@ async function previewPublish() {
   }
 }
 
+/*
+ * TASK CS-v2.0 작업 B — publishedCount는 "보낸 개수"지 "저장된 개수"가
+ * 아니다. /localizations는 videos.list(1유닛)로 유튜브에 실제로 저장된
+ * 값을 그대로 되읽으므로, videos.update(50유닛)를 또 쓰는 게 아니라
+ * 부담 없이 매 등록 뒤에 호출할 수 있다(routes/yt.js의 /localizations
+ * 주석 참고).
+ */
+function renderPublishVerification(sentPublished, verifyData) {
+  const box = $('publishVerify');
+  const existing = verifyData.existing || [];
+  const savedCodes = new Set(existing.map((e) => e.code));
+  const sentCodes = sentPublished.map((p) => p.code);
+  const missingAfterSave = sentCodes.filter((code) => !savedCodes.has(code));
+
+  const parts = [];
+  parts.push('<h4>유튜브에서 실제로 되읽은 결과</h4>');
+  parts.push(`<p class="hint">보낸 언어 ${sentCodes.length}개 · 방금 videos.list로 다시 읽은 결과 유튜브에 저장된 언어 ${existing.length}개</p>`);
+
+  if (missingAfterSave.length) {
+    parts.push(`<p class="bad">⚠ 보냈지만 되읽기에는 없는 언어 ${missingAfterSave.length}개: ${missingAfterSave.map(escapeHtml).join(', ')}` +
+      ' — 유튜브가 조용히 거부했거나 반영에 시간이 걸리는 중일 수 있습니다. 잠시 후 새로고침해 다시 확인하세요.</p>');
+  } else if (sentCodes.length) {
+    parts.push('<p class="ok">보낸 언어가 모두 유튜브에 저장된 것으로 확인됩니다.</p>');
+  }
+
+  if (existing.length) {
+    parts.push('<ul>' + existing.map((e) =>
+      `<li><code>${escapeHtml(e.code)}</code>${sentCodes.includes(e.code) ? '' : ' <span class="hint">(이번에 보내지 않은, 기존 등록)</span>'}` +
+      `<br /><span style="color:#cfe0f6">${escapeHtml(e.title)}</span></li>`
+    ).join('') + '</ul>');
+  }
+
+  parts.push('<p class="hint">직접 확인: YouTube Studio → 콘텐츠 → 이 영상 → 세부정보 → "번역 추가(다른 언어)" 섹션에서 언어별 제목을 볼 수 있습니다. ' +
+    '또는 유튜브 자체의 표시 언어 설정을 등록한 언어로 바꾼 뒤 영상 페이지를 열어 확인하세요. ' +
+    '이 등록은 Gemini 번역 한도와는 무관한 별도 기능입니다(유튜브 쿼터, 하루 10,000유닛) — 여기서 발생하는 비용은 없습니다.</p>');
+
+  box.innerHTML = parts.join('');
+  box.classList.remove('hidden');
+}
+
 async function applyPublish() {
   if (!publishState.plan) return setError('publishError', '먼저 미리보기를 실행해 주세요.');
   setError('publishError');
+  $('publishVerify').classList.add('hidden');
   const button = $('applyPublishBtn');
   button.disabled = true;
   button.textContent = '등록 중…';
@@ -900,7 +941,16 @@ async function applyPublish() {
       body: JSON.stringify({ ...publishState.plan, dryRun: false }),
     });
     renderPublishReport(data, true);
-    showToast(`${data.publishedCount}개 언어를 유튜브에 등록했습니다.`);
+    showToast(`${data.publishedCount}개 언어를 유튜브로 보냈습니다. 실제 저장 여부 확인 중…`);
+
+    // TASK CS-v2.0 작업 B 요구사항 1 — 등록 응답(보낸 개수) 말고, 되읽은 값이 진짜다.
+    try {
+      const verify = await api(`/api/yt/localizations?videoId=${encodeURIComponent(data.videoId)}`);
+      renderPublishVerification(data.published || [], verify);
+    } catch (verifyError) {
+      $('publishVerify').innerHTML = `<p class="bad">등록 후 확인 조회 실패: ${escapeHtml(verifyError.message)} — YouTube Studio에서 직접 확인해 주세요.</p>`;
+      $('publishVerify').classList.remove('hidden');
+    }
   } catch (error) {
     setError('publishError', error.message);
   } finally {
