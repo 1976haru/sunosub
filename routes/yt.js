@@ -529,20 +529,22 @@ router.post('/translate', async (req, res, next) => {
       // language instead of mangling it — it comes back via
       // `missingLanguages` for the caller to retry, same as a truncated
       // batch already does, rather than shipping a broken channel name.
-      const oversizedTitleLanguages = [];
-      fetchedResults = fetchedResults.filter((r) => {
-        if (Array.from(r.translatedTitle).length > 100) {
-          oversizedTitleLanguages.push(r.language);
-          return false;
-        }
-        return true;
-      });
+      fetchedResults = fetchedResults.filter((r) => Array.from(r.translatedTitle).length <= 100);
 
+      // TASK CS-v1.8 follow-up — was gated on `truncated`, i.e. only computed
+      // when parseJsonText() needed salvageJsonObjects() to recover a
+      // malformed/cut-off response. Measured a real case this missed: a
+      // batch that parsed as perfectly valid JSON (so `truncated` stayed
+      // false) but the model's array simply had fewer objects than
+      // languages requested — 4 of 10 requested languages silently
+      // vanished with no signal at all, not even in this field. A language
+      // is "missing" whenever it isn't in the final fetchedResults, for
+      // whatever reason (truncation, an oversized title dropped just
+      // above, or the model just not generating an entry for it) — compute
+      // that unconditionally instead of only checking it in the one case
+      // we happened to already have a name for.
       const recoveredLanguages = new Set(fetchedResults.map((r) => r.language));
-      missingLanguages = [...new Set([
-        ...(truncated ? languagesToFetch.filter((lang) => !recoveredLanguages.has(lang)) : []),
-        ...oversizedTitleLanguages,
-      ])];
+      missingLanguages = languagesToFetch.filter((lang) => !recoveredLanguages.has(lang));
 
       // TASK CS-v1.8 — cache whatever actually came back, salvaged partial
       // batch included, so the languages that DID complete never cost a
