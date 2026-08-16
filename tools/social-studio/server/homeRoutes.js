@@ -61,6 +61,7 @@ router.get('/api/sets', (_req, res, next) => {
         hasTextpack: has('textpack.json'),
         hasCards: fs.existsSync(path.join(dir, 'cards')),
         hasLintReport: has('lint-report.json'),
+        hasSource: has('source.json'), // TASK CS-v1.9 작업 A — 제목 클릭 원클릭 재생성 가능 여부
         updatedAt: mtime,
       });
     }
@@ -97,6 +98,26 @@ router.post('/api/generate', async (req, res, next) => {
     const generation = await runGenerationPipeline(normalized, { youtubeUrl, mode });
     const { textpack, outDir } = generation;
 
+    // TASK CS-v1.9 작업 A — 원본 가사 JSON 보관. os.tmpdir()의 임시 파일은
+    // 기존대로 finally에서 지운다(아래) — 이건 그와 별개로 out/<setName>/에
+    // 사본을 남기는 단계다. 이게 있어야 세트 이름만으로 다시 생성할 재료가
+    // 남는다(다음 작업). 저장 실패는 이번 생성 결과 자체를 막을 이유가
+    // 아니므로 경고로만 알린다 — 이 경우 이 세트는 원클릭 재생성 대상에서
+    // 빠진다.
+    const sourceWarnings = [];
+    try {
+      fs.writeFileSync(path.join(outDir, 'source.json'), content, 'utf8');
+      fs.writeFileSync(
+        path.join(outDir, 'source.meta.json'),
+        JSON.stringify({ youtubeUrl: youtubeUrl || null, savedAt: new Date().toISOString(), mode }, null, 2) + '\n',
+        'utf8'
+      );
+    } catch (saveError) {
+      sourceWarnings.push(
+        `원본 가사 파일 보관 실패 — 이 세트는 제목 클릭으로 다시 만들 수 없습니다: ${saveError.message}`
+      );
+    }
+
     // TASK-S9 후속 — normalized.set.warnings(예: titleLocalized 폴백 [중요]
     // 경고)와 textpack.warnings는 서로 다른 배열이다. 이전엔 setWarnings로
     // 따로 응답에 실어 home.html의 JS가 화면에서만 합쳤는데, 이러면 응답의
@@ -108,7 +129,12 @@ router.post('/api/generate', async (req, res, next) => {
     // 429, JSON 파싱 실패 등) 같은, local 모드에는 없던 경고다. 위와 같은
     // 이유로 응답의 warnings 하나에 합친다.
     const mergedWarnings = [
-      ...new Set([...(normalized.set.warnings || []), ...(textpack.warnings || []), ...(generation.warnings || [])]),
+      ...new Set([
+        ...(normalized.set.warnings || []),
+        ...(textpack.warnings || []),
+        ...(generation.warnings || []),
+        ...sourceWarnings,
+      ]),
     ];
 
     res.json({
