@@ -43,6 +43,17 @@ function applyKeyStatus(status) {
     badge.className = 'key-badge warn';
     notice.classList.remove('hidden');
   }
+  // TASK CS-v1.8 — this badge is the one place in the shell (visible on
+  // every tab) that says whether a paid key is active. /api/status never
+  // includes the key value itself, only this boolean.
+  const paidBadge = $('paidKeyBadge');
+  if (status.paidKeyConfigured) {
+    paidBadge.textContent = '유료 키 사용 중 (유튜브 번역기)';
+    paidBadge.className = 'key-badge warn';
+  } else {
+    paidBadge.textContent = '유료 키 미설정 (전부 무료 키)';
+    paidBadge.className = 'key-badge';
+  }
 }
 
 async function refreshKeyStatus() {
@@ -67,10 +78,14 @@ function setupKeyDialog() {
   const dialog = $('keyDialog');
   const input = $('keyInput');
   const error = $('keyDialogError');
+  const paidInput = $('paidKeyInput');
+  const paidError = $('paidKeyDialogError');
 
   $('keyChangeBtn').addEventListener('click', () => {
     input.value = '';
     error.classList.add('hidden');
+    paidInput.value = '';
+    paidError.classList.add('hidden');
     dialog.showModal();
     input.focus();
   });
@@ -99,6 +114,30 @@ function setupKeyDialog() {
   };
   $('keySaveBtn').addEventListener('click', submit);
   input.addEventListener('keydown', (event) => { if (event.key === 'Enter') submit(); });
+
+  // TASK CS-v1.8 — separate submit path hitting /api/key/paid, so saving one
+  // key can never accidentally overwrite or clear the other.
+  const submitPaid = async () => {
+    const apiKey = paidInput.value.trim();
+    if (!apiKey) {
+      paidError.textContent = '키를 입력해 주세요.';
+      paidError.classList.remove('hidden');
+      return;
+    }
+    try {
+      const status = await api('/api/key/paid', { method: 'POST', body: JSON.stringify({ apiKey }) });
+      applyKeyStatus(status);
+      notifyToolsKeyUpdated();
+      paidInput.value = '';
+      paidError.classList.add('hidden');
+      showToast('유료 키를 저장했습니다. 유튜브 번역기의 번역·재생성만 이 키로 나갑니다.');
+    } catch (err) {
+      paidError.textContent = err.message;
+      paidError.classList.remove('hidden');
+    }
+  };
+  $('paidKeySaveBtn').addEventListener('click', submitPaid);
+  paidInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') submitPaid(); });
 }
 
 document.querySelectorAll('.tab-btn').forEach((btn) => {

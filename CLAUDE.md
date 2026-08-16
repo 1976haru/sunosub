@@ -89,9 +89,26 @@ npm run check    # node --check server.js  ← server.js 하나만 문법 검사
 
 ### 3.5 Gemini 키는 `lib/keyStore.js`를 통해서만
 
-`lib/keyStore.js`가 `.gemini_key` 파일 또는 `GEMINI_API_KEY` 환경변수에서 읽어 전 도구가
-공유합니다. **키 값을 API 응답이나 로그에 절대 노출하지 마세요.** 상태 확인은
-`currentKey()`의 불리언 결과만 씁니다.
+`lib/keyStore.js`가 키를 읽어 전 도구에 공급합니다. **키 값을 API 응답이나 로그에 절대
+노출하지 마세요.** 상태 확인은 `currentKey()`/`hasPaidKey()`의 불리언 결과만 씁니다.
+
+**CS-v1.8부터 무료/유료 두 슬롯입니다** (Gemini 과금·한도가 API 키 = Google Cloud
+프로젝트 단위이기 때문— 프로젝트당 요청 한도표는 안 적습니다, 요금표처럼 바뀌니 필요하면
+그때 확인하세요):
+
+- 무료: `.gemini_key` 파일 / `GEMINI_API_KEY` 환경변수. 기존과 동일.
+- 유료(선택): `.gemini_key_paid` 파일 / `GEMINI_API_KEY_PAID` 환경변수. `currentKey('paid')`가
+  없으면 무료 키로 **자동 폴백**하므로, 유료 키를 넣지 않으면 지금처럼 전부 무료 키로
+  동작합니다.
+- **유료 슬롯을 쓰는 곳은 `routes/yt.js`의 `/translate`·`/regenerate` 딱 둘뿐**입니다. 나머지
+  전부(추출, 타임라인, 숏츠 텍스트/이미지/영상, 스토리보드, 썸네일, 소셜 스튜디오)는 무료
+  슬롯입니다. 새 유료 호출을 추가하고 싶으면 먼저 제안하세요 — 단가 자릿수가 다른 걸(특히
+  이미지·영상 생성) 유료 슬롯에 붙이지 않습니다.
+- `lib/gemini.js`의 요청 큐(`minIntervalMs`/재시도)도 슬롯별로 **독립**입니다. 두 키는 서로
+  다른 프로젝트의 서로 다른 분당 한도이므로 같은 큐를 타면 안 됩니다.
+- 어떤 요청이 어느 슬롯을 쓰는지는 `withRetry(fn, { tier })`/`requireGeminiClient(tier)`의
+  `tier` 인자로 결정됩니다. 인자를 생략하면 항상 `'free'`— 새 호출부를 추가할 때 유료로
+  보내려는 의도가 없다면 그냥 생략하면 됩니다.
 
 > 알려진 불일치: `routes/shorts.js:165`는 `keyStore` 대신 `process.env`를 직접 읽습니다.
 > 동작에는 문제가 없지만 shorts를 손볼 일이 있으면 `currentKey()`로 통일하세요.

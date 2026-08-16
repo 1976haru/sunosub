@@ -121,7 +121,7 @@ button, input { font: inherit; color: inherit; }
 .key-dialog h2 { margin: 0 0 10px; font-size: 18px; }
 .key-dialog-copy { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 14px; }
 .key-dialog-copy a { color: var(--primary); }
-#keyInput {
+#keyInput, #paidKeyInput {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;

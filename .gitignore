@@ -4,6 +4,7 @@ storyboard-app/dist/
 tools/storyboard/
 output/
 .gemini_key
+.gemini_key_paid
 .gemini_usage.json
 .yt_translation_cache.json
 .yt_oauth.json

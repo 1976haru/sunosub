@@ -3,7 +3,7 @@ import { Type } from '@google/genai';
 import { requireGeminiClient, withRetry, isRateLimitError, isServerError } from '../lib/gemini.js';
 import { getTodayGeminiUsage } from '../lib/geminiUsage.js';
 import { getCachedTranslations, setCachedTranslations } from '../lib/ytTranslationCache.js';
-import { currentKey } from '../lib/keyStore.js';
+import { currentKey, hasPaidKey } from '../lib/keyStore.js';
 import { extractKeyless, fallbackOEmbed } from '../lib/ytKeyless.js';
 import {
   buildAuthUrl,
@@ -291,12 +291,15 @@ async function generateTranslation(ai, prompt) {
     config: buildConfig(includeThinking),
   });
 
+  // TASK CS-v1.8 — translate is one of the two paid-tier call sites (see
+  // lib/keyStore.js's currentKey('paid')); everything else in this file
+  // stays on the free tier.
   try {
-    return await withRetry(() => call(!skipThinkingConfig), { label: 'yt/translate' });
+    return await withRetry(() => call(!skipThinkingConfig), { label: 'yt/translate', tier: 'paid' });
   } catch (error) {
     if (!skipThinkingConfig && isThinkingUnsupportedError(error)) {
       skipThinkingConfig = true;
-      return withRetry(() => call(false), { label: 'yt/translate' });
+      return withRetry(() => call(false), { label: 'yt/translate', tier: 'paid' });
     }
     throw error;
   }
@@ -314,6 +317,13 @@ router.get('/status', (req, res) => {
     // that share this key (lib/geminiUsage.js), not just this one. Doesn't
     // gate anything; the account-wide truth is Google AI Studio's dashboard.
     geminiUsageToday: getTodayGeminiUsage(),
+    // TASK CS-v1.8 — which key /translate and /regenerate actually charge
+    // against right now. currentKey('paid') silently falls back to the free
+    // key when unset, which is correct for actually running the call, but
+    // the UI needs to know when that fallback is happening so it can be
+    // honest about where the money is (or isn't) going.
+    paidKeyConfigured: hasPaidKey(),
+    translationTier: hasPaidKey() ? 'paid' : 'free',
   });
 });
 
@@ -386,7 +396,11 @@ router.post('/extract', async (req, res, next) => {
 
 router.post('/translate', async (req, res, next) => {
   try {
-    if (!currentKey()) {
+    // TASK CS-v1.8 — currentKey('paid') falls back to the free key when no
+    // paid key is configured (the common case), so this still passes with
+    // just a free key exactly like before. It only differs from the old
+    // currentKey() check for the edge case of a paid key with no free key.
+    if (!currentKey('paid')) {
       const error = new Error('무료 Gemini 키를 설정하면 번역할 수 있습니다. 상단 배지에서 키를 입력해 주세요.');
       error.status = 400;
       error.needsKey = true;
@@ -432,7 +446,7 @@ router.post('/translate', async (req, res, next) => {
     let missingLanguages = [];
 
     if (languagesToFetch.length > 0) {
-      const ai = requireGeminiClient();
+      const ai = requireGeminiClient('paid');
       const prompt = buildTranslatePrompt(title, description, languagesToFetch);
       const response = await generateTranslation(ai, prompt);
 
@@ -485,7 +499,7 @@ router.post('/translate', async (req, res, next) => {
 
 router.post('/regenerate', async (req, res, next) => {
   try {
-    if (!currentKey()) {
+    if (!currentKey('paid')) {
       const error = new Error('무료 Gemini 키를 설정하면 재생성할 수 있습니다.');
       error.status = 400;
       error.needsKey = true;
@@ -496,13 +510,13 @@ router.post('/regenerate', async (req, res, next) => {
     const language = String(req.body?.language || '').trim();
     const field = req.body?.field === 'description' ? 'description' : 'title';
     if (!language) return res.status(400).json({ error: '대상 언어가 없습니다.' });
-    const ai = requireGeminiClient();
+    const ai = requireGeminiClient('paid'); // TASK CS-v1.8 — the other paid-tier call site, alongside /translate
 
     const prompt = field === 'title'
       ? `Translate and rewrite this YouTube title naturally in ${language}. Maximum 100 Unicode characters. Preserve [playlist] and emojis. Return only the title, with no quotes or explanation.\n\nOriginal title:\n${title}`
       : `Translate and rewrite this YouTube description naturally in ${language}. Translate normal hashtags, preserve emojis, URLs, timestamps, and track-list song-title lines exactly. Return only the description, with no explanation.\n\nOriginal description:\n${description}`;
 
-    const response = await withRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }), { label: 'yt/regenerate' });
+    const response = await withRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }), { label: 'yt/regenerate', tier: 'paid' });
     const text = String(response.text || '').trim();
     if (!text) throw new Error('재생성 결과가 비어 있습니다.');
     res.json({ text: field === 'title' ? text.slice(0, 100) : text });

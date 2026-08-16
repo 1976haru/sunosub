@@ -14,6 +14,7 @@
     </div>
     <div class="shell-key">
       <span id="keyBadge" class="key-badge">키 확인 중…</span>
+      <span id="paidKeyBadge" class="key-badge">유료 키 확인 중…</span>
       <button id="keyChangeBtn" class="key-change-btn">키 변경</button>
     </div>
   </header>
@@ -53,6 +54,21 @@
       <div class="key-dialog-actions">
         <button type="button" id="keyCancelBtn" class="btn secondary">취소</button>
         <button type="button" id="keySaveBtn" class="btn primary">저장</button>
+      </div>
+
+      <!-- TASK CS-v1.8 — optional paid-tier key. Only routes/yt.js's /translate
+           and /regenerate use this; every other tool keeps using the free key above. -->
+      <hr style="border:none;border-top:1px solid var(--line);margin:20px 0" />
+      <h2>유료 키 (선택) — 유튜브 번역기 전용</h2>
+      <p class="key-dialog-copy">
+        결제를 연결한 <strong>별도</strong> Google Cloud 프로젝트의 키입니다. 설정하면 유튜브 번역기의
+        번역·재생성 호출만 이 키로 나가고, 나머지 4개 도구(추출·타임라인·숏츠·스토리보드·썸네일)는
+        그대로 위 무료 키를 씁니다. 비워두면 지금처럼 무료 키로 동작합니다.
+      </p>
+      <input id="paidKeyInput" type="password" autocomplete="off" placeholder="유료 프로젝트의 Gemini API 키 (선택)" />
+      <div id="paidKeyDialogError" class="key-dialog-error hidden"></div>
+      <div class="key-dialog-actions">
+        <button type="button" id="paidKeySaveBtn" class="btn primary">유료 키 저장</button>
       </div>
     </form>
   </dialog>
