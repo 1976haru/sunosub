@@ -183,7 +183,10 @@ export function generateFacebook(normalized, { channelId, limits, youtubeUrl, ex
   }
 
   const body = bodyPick.withinLimit
-    ? bodyPick.text.split('\n').join(style.facebookParagraphBreak)
+    // TASK CS-v1.8 follow-up — was split('\n'); pickLyricQuote() above (line 90)
+    // already treats lyric text as possibly-CRLF, so template body text should
+    // get the same treatment rather than relying on "templates happen to be LF-only today."
+    ? bodyPick.text.split(/\r?\n/).join(style.facebookParagraphBreak)
     : null;
 
   return { body, warnings };

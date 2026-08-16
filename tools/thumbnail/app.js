@@ -368,7 +368,7 @@ async function selectCopy(index) {
   if (!candidate) return;
   state.selectedCopyText = candidate.text;
   state.composeText.thumb = candidate.text;
-  state.composeText.cover = candidate.text.split('\n')[0];
+  state.composeText.cover = candidate.text.split(/\r?\n/)[0]; // TASK CS-v1.8 follow-up — match the project's CRLF-safe split convention (see socialPost.js:90)
   if (state.channelName) {
     await idb.addCopyHistory(state.channelName, candidate.text);
     state.copyHistory = await idb.getCopyHistory(state.channelName);
