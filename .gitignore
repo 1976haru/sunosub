@@ -5,6 +5,7 @@ tools/storyboard/
 output/
 .gemini_key
 .gemini_usage.json
+.yt_translation_cache.json
 .yt_oauth.json
 .timeline-settings.json
 .env

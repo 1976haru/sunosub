@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Type } from '@google/genai';
 import { requireGeminiClient, withRetry, isRateLimitError, isServerError } from '../lib/gemini.js';
 import { getTodayGeminiUsage } from '../lib/geminiUsage.js';
+import { getCachedTranslations, setCachedTranslations } from '../lib/ytTranslationCache.js';
 import { currentKey } from '../lib/keyStore.js';
 import { extractKeyless, fallbackOEmbed } from '../lib/ytKeyless.js';
 import {
@@ -253,6 +254,30 @@ function isThinkingUnsupportedError(error) {
   return /thinking/i.test(String(error?.message || ''));
 }
 
+function buildTranslatePrompt(title, description, languages) {
+  return `You are a professional YouTube metadata localization translator.
+Translate the Korean title and description into every target language listed below.
+
+Target languages:
+${languages.map((x, i) => `${i + 1}. ${x}`).join('\n')}
+
+Rules:
+1. Return exactly one object per requested target language, in the same order.
+2. language must exactly match the target-language label supplied above.
+3. translatedTitle must be natural, clickable, and no more than 100 Unicode characters.
+4. Preserve tags such as [playlist], [Playlist], and emojis.
+5. Translate normal hashtags naturally, but keep numeric hashtags such as #7080.
+6. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
+7. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+8. Do not add explanations, quotation marks, or extra marketing claims.
+
+Original title:
+${title}
+
+Original description:
+${description}`;
+}
+
 async function generateTranslation(ai, prompt) {
   const buildConfig = (includeThinking) => ({
     responseMimeType: 'application/json',
@@ -380,72 +405,78 @@ router.post('/translate', async (req, res, next) => {
     // against a normal batch.
     if (languages.length > 50) return res.status(400).json({ error: '한 번에 최대 50개 언어까지 처리할 수 있습니다.' });
 
-    // TASK CS-v1.8 — was count-only (the > 50 check above). tools/yt/app.js's
-    // estimateBatchSize() sizes batches on the client, but nothing enforced
-    // that server-side, so "description 4000자 × 50개 언어" sailed straight
-    // through and blew past maxOutputTokens: 16384, getting silently cut off.
-    // Reject before spending the call, and hand back the batch size we'd
-    // actually accept so the caller can re-split and retry.
-    const recommendedBatchSize = estimateMaxBatchSize(description);
-    if (languages.length > recommendedBatchSize) {
-      return res.status(400).json({
-        error: `설명 길이(${Array.from(description).length}자) 기준으로 한 번에 최대 ${recommendedBatchSize}개 언어까지 처리할 수 있습니다. 더 작은 묶음으로 나눠 보내 주세요.`,
-        recommendedBatchSize,
-      });
+    // TASK CS-v1.8 — cache lookup happens before the batch-size check below:
+    // a cached language costs no output tokens, so only the ones we'd
+    // actually send to Gemini should count against that budget. This also
+    // means a fully-cached request never even builds a Gemini client.
+    const { hit: cachedResults, miss: languagesToFetch } = getCachedTranslations({ model: MODEL, title, description, languages });
+
+    if (languagesToFetch.length > 0) {
+      // TASK CS-v1.8 — was count-only. tools/yt/app.js's estimateBatchSize()
+      // sizes batches on the client, but nothing enforced that server-side,
+      // so "description 4000자 × 50개 언어" sailed straight through and blew
+      // past maxOutputTokens: 16384, getting silently cut off. Reject before
+      // spending the call, and hand back the batch size we'd actually
+      // accept so the caller can re-split and retry.
+      const recommendedBatchSize = estimateMaxBatchSize(description);
+      if (languagesToFetch.length > recommendedBatchSize) {
+        return res.status(400).json({
+          error: `설명 길이(${Array.from(description).length}자) 기준으로 한 번에 최대 ${recommendedBatchSize}개 언어까지 처리할 수 있습니다(캐시에 없는 ${languagesToFetch.length}개 기준). 더 작은 묶음으로 나눠 보내 주세요.`,
+          recommendedBatchSize,
+        });
+      }
     }
 
-    const ai = requireGeminiClient();
-    const prompt = `You are a professional YouTube metadata localization translator.
-Translate the Korean title and description into every target language listed below.
-
-Target languages:
-${languages.map((x, i) => `${i + 1}. ${x}`).join('\n')}
-
-Rules:
-1. Return exactly one object per requested target language, in the same order.
-2. language must exactly match the target-language label supplied above.
-3. translatedTitle must be natural, clickable, and no more than 100 Unicode characters.
-4. Preserve tags such as [playlist], [Playlist], and emojis.
-5. Translate normal hashtags naturally, but keep numeric hashtags such as #7080.
-6. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
-7. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
-8. Do not add explanations, quotation marks, or extra marketing claims.
-
-Original title:
-${title}
-
-Original description:
-${description}`;
-
-    const response = await generateTranslation(ai, prompt);
-
-    let parsed;
+    let fetchedResults = [];
     let truncated = false;
-    try {
-      parsed = parseJsonText(response.text);
-      if (!Array.isArray(parsed)) throw new Error('번역 결과 형식이 올바르지 않습니다.');
-    } catch (parseError) {
-      // TASK CS-v1.7 — response.text failed to parse whole; see if it was
-      // just cut off mid-array and we can still salvage the complete
-      // objects at the front of it instead of failing every language in
-      // this batch over one that ran long.
-      const salvaged = salvageJsonObjects(response.text);
-      if (!salvaged.length) throw parseError;
-      parsed = salvaged;
-      truncated = true;
+    let missingLanguages = [];
+
+    if (languagesToFetch.length > 0) {
+      const ai = requireGeminiClient();
+      const prompt = buildTranslatePrompt(title, description, languagesToFetch);
+      const response = await generateTranslation(ai, prompt);
+
+      let parsed;
+      try {
+        parsed = parseJsonText(response.text);
+        if (!Array.isArray(parsed)) throw new Error('번역 결과 형식이 올바르지 않습니다.');
+      } catch (parseError) {
+        // TASK CS-v1.7 — response.text failed to parse whole; see if it was
+        // just cut off mid-array and we can still salvage the complete
+        // objects at the front of it instead of failing every language in
+        // this batch over one that ran long.
+        const salvaged = salvageJsonObjects(response.text);
+        if (!salvaged.length) throw parseError;
+        parsed = salvaged;
+        truncated = true;
+      }
+      fetchedResults = parsed.map((item, index) => ({
+        language: languagesToFetch[index] || String(item.language || ''),
+        translatedTitle: String(item.translatedTitle || '').trim().slice(0, 100),
+        translatedDescription: String(item.translatedDescription || '').trim(),
+      }));
+      const recoveredLanguages = new Set(fetchedResults.map((r) => r.language));
+      missingLanguages = truncated ? languagesToFetch.filter((lang) => !recoveredLanguages.has(lang)) : [];
+
+      // TASK CS-v1.8 — cache whatever actually came back, salvaged partial
+      // batch included, so the languages that DID complete never cost a
+      // second call just because one language in the same batch got cut off.
+      if (fetchedResults.length) {
+        setCachedTranslations({ model: MODEL, title, description, results: fetchedResults });
+      }
     }
-    const normalized = parsed.map((item, index) => ({
-      language: languages[index] || String(item.language || ''),
-      translatedTitle: String(item.translatedTitle || '').trim().slice(0, 100),
-      translatedDescription: String(item.translatedDescription || '').trim(),
-    }));
-    const recoveredLanguages = new Set(normalized.map((r) => r.language));
-    const missingLanguages = truncated ? languages.filter((lang) => !recoveredLanguages.has(lang)) : [];
+
+    const byLanguage = new Map();
+    for (const result of cachedResults) byLanguage.set(result.language, result);
+    for (const result of fetchedResults) byLanguage.set(result.language, result);
+    const results = languages.map((lang) => byLanguage.get(lang)).filter(Boolean);
+
     res.json({
-      results: normalized,
+      results,
       model: MODEL,
       truncated,
       missingLanguages,
+      fromCache: cachedResults.map((result) => result.language),
     });
   } catch (error) {
     next(error);

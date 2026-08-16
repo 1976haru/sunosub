@@ -74,7 +74,17 @@
         <input id="languageSearch" class="language-search" type="search" placeholder="언어 검색" />
       </div>
       <div id="languageGrid" class="language-grid"></div>
+      <!-- TASK CS-v1.8 — inline confirm instead of window.confirm(): shown before re-running a selection that overlaps existing results ("비용이 발생합니다") -->
+      <div id="translateConfirm" class="alert hidden">
+        <p id="translateConfirmText"></p>
+        <div class="toolbar" style="margin-top:8px">
+          <button id="translateConfirmYesBtn" class="btn primary">계속 진행 (비용 발생)</button>
+          <button id="translateConfirmNoBtn" class="btn secondary">취소</button>
+        </div>
+      </div>
       <button id="translateBtn" class="btn primary wide">선택 언어 번역 시작</button>
+      <!-- TASK CS-v1.8 — only shown once there are results and something selected still isn't in them (untried or dropped by a truncated batch); JS toggles .hidden -->
+      <button id="continueTranslateBtn" class="btn secondary wide hidden">이어서 번역</button>
       <div id="progressWrap" class="progress-wrap hidden">
         <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
         <p id="progressText" class="hint"></p>
