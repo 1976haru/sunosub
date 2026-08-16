@@ -278,31 +278,50 @@ Original description:
 ${description}`;
 }
 
-async function generateTranslation(ai, prompt) {
-  const buildConfig = (includeThinking) => ({
-    responseMimeType: 'application/json',
-    responseSchema: TRANSLATE_RESPONSE_SCHEMA,
-    maxOutputTokens: 16384,
-    ...(includeThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-  });
+/*
+ * TASK CS-v1.8 — do NOT add `tools: [{ googleSearch: {} }]` or
+ * `{ urlContext: {} }` to this config, ever. Grounding is billed per
+ * request on top of token cost (separate from maxOutputTokens/thinking),
+ * and translation never needs to look anything up — it's given the full
+ * title/description text already. extractWithGemini() above uses both
+ * because it genuinely needs to fetch the page; that's a free-tier, once-
+ * per-video call. This function runs on the paid tier and can be called
+ * many times per video (one per batch), so an unnecessary grounding charge
+ * here would multiply, not just add once.
+ *
+ * generateWithOptionalThinking() is shared by generateTranslation() and
+ * /regenerate below — both hit the same paid model/account, so "does this
+ * account accept thinkingConfig" (skipThinkingConfig) only needs discovering
+ * once, not once per endpoint. Measured directly: /regenerate without any
+ * config at all (i.e. what it looked like before this task) spent 904
+ * thoughtsTokenCount to produce a 17-token title rewrite — thinking was
+ * silently the majority of every regenerate call's cost.
+ */
+async function generateWithOptionalThinking(ai, { contents, config }, { label }) {
   const call = (includeThinking) => ai.models.generateContent({
     model: MODEL,
-    contents: prompt,
-    config: buildConfig(includeThinking),
+    contents,
+    config: { ...config, ...(includeThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
   });
-
-  // TASK CS-v1.8 — translate is one of the two paid-tier call sites (see
-  // lib/keyStore.js's currentKey('paid')); everything else in this file
-  // stays on the free tier.
   try {
-    return await withRetry(() => call(!skipThinkingConfig), { label: 'yt/translate', tier: 'paid' });
+    return await withRetry(() => call(!skipThinkingConfig), { label, tier: 'paid' });
   } catch (error) {
     if (!skipThinkingConfig && isThinkingUnsupportedError(error)) {
       skipThinkingConfig = true;
-      return withRetry(() => call(false), { label: 'yt/translate', tier: 'paid' });
+      return withRetry(() => call(false), { label, tier: 'paid' });
     }
     throw error;
   }
+}
+
+async function generateTranslation(ai, prompt) {
+  // TASK CS-v1.8 — translate is one of the two paid-tier call sites (see
+  // lib/keyStore.js's currentKey('paid')); everything else in this file
+  // stays on the free tier.
+  return generateWithOptionalThinking(ai, {
+    contents: prompt,
+    config: { responseMimeType: 'application/json', responseSchema: TRANSLATE_RESPONSE_SCHEMA, maxOutputTokens: 16384 },
+  }, { label: 'yt/translate' });
 }
 
 router.get('/status', (req, res) => {
@@ -463,6 +482,14 @@ router.post('/translate', async (req, res, next) => {
         if (!salvaged.length) throw parseError;
         parsed = salvaged;
         truncated = true;
+        // TASK CS-v1.8 task D — a truncated batch is salvaged, not
+        // re-requested. This request makes exactly one generateContent call
+        // regardless of truncation; the missing languages are reported via
+        // `missingLanguages` and only re-fetched if/when the caller
+        // explicitly asks again (tools/yt/app.js's "이어서 번역"), which
+        // itself sends each pending language through exactly one fresh
+        // call. So "재요청은 묶음당 1회까지만" holds by construction — there
+        // is no automatic retry-on-truncation loop here to bound.
       }
       fetchedResults = parsed.map((item, index) => ({
         language: languagesToFetch[index] || String(item.language || ''),
@@ -516,7 +543,15 @@ router.post('/regenerate', async (req, res, next) => {
       ? `Translate and rewrite this YouTube title naturally in ${language}. Maximum 100 Unicode characters. Preserve [playlist] and emojis. Return only the title, with no quotes or explanation.\n\nOriginal title:\n${title}`
       : `Translate and rewrite this YouTube description naturally in ${language}. Translate normal hashtags, preserve emojis, URLs, timestamps, and track-list song-title lines exactly. Return only the description, with no explanation.\n\nOriginal description:\n${description}`;
 
-    const response = await withRetry(() => ai.models.generateContent({ model: MODEL, contents: prompt }), { label: 'yt/regenerate', tier: 'paid' });
+    // TASK CS-v1.8 — this used to call generateContent with no config at
+    // all, which meant no thinkingConfig either; measured that costing ~53x
+    // the actual output in thinking tokens (see generateWithOptionalThinking's
+    // doc comment above). maxOutputTokens: 4096 is generous for a single
+    // title/description rewrite while still bounding the worst case.
+    const response = await generateWithOptionalThinking(ai, {
+      contents: prompt,
+      config: { maxOutputTokens: 4096 },
+    }, { label: 'yt/regenerate' });
     const text = String(response.text || '').trim();
     if (!text) throw new Error('재생성 결과가 비어 있습니다.');
     res.json({ text: field === 'title' ? text.slice(0, 100) : text });
