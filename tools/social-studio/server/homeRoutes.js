@@ -5,6 +5,7 @@
  *   GET  /social-studio/            홈 화면 (셸 탭이 iframe으로 여는 곳)
  *   GET  /social-studio/api/sets    out/ 아래 세트 목록
  *   POST /social-studio/api/generate 가사 JSON 업로드 → normalized + textpack 생성
+ *   POST /social-studio/api/sets/:setName/regenerate 저장된 원본으로 재생성 (CS-v1.9)
  *
  * 외부 네트워크 요청 0건. 파일 경로는 out/ 아래로만 해석한다.
  */
@@ -30,6 +31,58 @@ const router = Router();
 
 function httpError(message, status = 400) {
   return Object.assign(new Error(message), { status });
+}
+
+// TASK CS-v1.9 작업 B — setName은 URL 경로 세그먼트에서 온다. Express가
+// 퍼센트 인코딩을 디코드해 req.params.setName에 슬래시를 되살릴 수 있으므로
+// (CLAUDE.md 4.2의 "서버가 전부 재검증한다" 원칙), 문자 화이트리스트와
+// resolve() 후 OUT_ROOT 하위인지 이중으로 확인한다.
+function resolveSetDir(setName) {
+  const raw = String(setName || '');
+  if (!raw || raw === '.' || raw === '..' || /[\\/]/.test(raw)) {
+    throw httpError('세트 이름이 올바르지 않습니다.');
+  }
+  const resolvedRoot = path.resolve(OUT_ROOT);
+  const resolvedDir = path.resolve(resolvedRoot, raw);
+  if (resolvedDir !== resolvedRoot && !resolvedDir.startsWith(resolvedRoot + path.sep)) {
+    throw httpError('세트 이름이 올바르지 않습니다.');
+  }
+  return resolvedDir;
+}
+
+// TASK CS-v1.9 작업 B — /api/generate와 /api/sets/:setName/regenerate가
+// 정확히 같은 응답 형태를 내도록(요구사항 5) 한 곳에서만 조립한다. 두
+// 엔드포인트가 각자 이 객체를 베껴 쓰면 나중에 한쪽만 고치고 잊는 사고가
+// 난다.
+function buildGenerationResult(normalized, report, generation, extraWarnings = []) {
+  const { textpack, outDir } = generation;
+  const mergedWarnings = [
+    ...new Set([
+      ...(normalized.set.warnings || []),
+      ...(textpack.warnings || []),
+      ...(generation.warnings || []),
+      ...extraWarnings,
+    ]),
+  ];
+
+  return {
+    ok: true,
+    setName: normalized.set.setName,
+    channelId: normalized.set.channelId,
+    songCount: normalized.songs.length,
+    coverage: report.coverage || null,
+    unknownTerms: (report.unknownTerms || []).length,
+    unmatchedEmotionArcs: (report.unmatchedEmotionArcs || []).length,
+    warnings: mergedWarnings,
+    errors: textpack.errors || [],
+    outDir,
+    packUrl: `/social-studio/pack/${encodeURIComponent(normalized.set.setName)}`,
+    mode: generation.mode,
+    prompt: generation.prompt || null,
+    hasPrompt: Boolean(generation.prompt),
+    usedFallback: generation.usedFallback || false,
+    requestCount: typeof generation.requestCount === 'number' ? generation.requestCount : null,
+  };
 }
 
 // GET /social-studio/ — 홈 화면
@@ -96,19 +149,17 @@ router.post('/api/generate', async (req, res, next) => {
 
     const { normalized, report } = runSetPackPipeline(tmpFile);
     const generation = await runGenerationPipeline(normalized, { youtubeUrl, mode });
-    const { textpack, outDir } = generation;
 
     // TASK CS-v1.9 작업 A — 원본 가사 JSON 보관. os.tmpdir()의 임시 파일은
     // 기존대로 finally에서 지운다(아래) — 이건 그와 별개로 out/<setName>/에
-    // 사본을 남기는 단계다. 이게 있어야 세트 이름만으로 다시 생성할 재료가
-    // 남는다(다음 작업). 저장 실패는 이번 생성 결과 자체를 막을 이유가
-    // 아니므로 경고로만 알린다 — 이 경우 이 세트는 원클릭 재생성 대상에서
-    // 빠진다.
+    // 사본을 남기는 단계다. 이게 있어야 세트 이름만으로 다시 생성(작업 B)할
+    // 재료가 남는다. 저장 실패는 이번 생성 결과 자체를 막을 이유가 아니므로
+    // 경고로만 알린다 — 이 경우 이 세트는 원클릭 재생성 대상에서 빠진다.
     const sourceWarnings = [];
     try {
-      fs.writeFileSync(path.join(outDir, 'source.json'), content, 'utf8');
+      fs.writeFileSync(path.join(generation.outDir, 'source.json'), content, 'utf8');
       fs.writeFileSync(
-        path.join(outDir, 'source.meta.json'),
+        path.join(generation.outDir, 'source.meta.json'),
         JSON.stringify({ youtubeUrl: youtubeUrl || null, savedAt: new Date().toISOString(), mode }, null, 2) + '\n',
         'utf8'
       );
@@ -128,33 +179,54 @@ router.post('/api/generate', async (req, res, next) => {
     // TASK-S10 — generation.warnings는 gemini 모드의 폴백 사유(설정 미확인,
     // 429, JSON 파싱 실패 등) 같은, local 모드에는 없던 경고다. 위와 같은
     // 이유로 응답의 warnings 하나에 합친다.
-    const mergedWarnings = [
-      ...new Set([
-        ...(normalized.set.warnings || []),
-        ...(textpack.warnings || []),
-        ...(generation.warnings || []),
-        ...sourceWarnings,
-      ]),
-    ];
+    // TASK CS-v1.9 작업 B — 이 응답 조립을 buildGenerationResult()로
+    // 옮겼다: /api/sets/:setName/regenerate가 정확히 같은 형태를 내야
+    // 해서(요구사항 5), 인라인으로 두 벌 유지하면 한쪽만 고치고 잊는 사고가
+    // 난다.
+    res.json(buildGenerationResult(normalized, report, generation, sourceWarnings));
+  } catch (error) {
+    next(error);
+  } finally {
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* ignore */ } }
+  }
+});
 
-    res.json({
-      ok: true,
-      setName: normalized.set.setName,
-      channelId: normalized.set.channelId,
-      songCount: normalized.songs.length,
-      coverage: report.coverage || null,
-      unknownTerms: (report.unknownTerms || []).length,
-      unmatchedEmotionArcs: (report.unmatchedEmotionArcs || []).length,
-      warnings: mergedWarnings,
-      errors: textpack.errors || [],
-      outDir,
-      packUrl: `/social-studio/pack/${encodeURIComponent(normalized.set.setName)}`,
-      mode: generation.mode,
-      prompt: generation.prompt || null,
-      hasPrompt: Boolean(generation.prompt),
-      usedFallback: generation.usedFallback || false,
-      requestCount: typeof generation.requestCount === 'number' ? generation.requestCount : null,
-    });
+// POST /social-studio/api/sets/:setName/regenerate — TASK CS-v1.9 작업 B:
+// 저장해둔 out/<setName>/source.json + source.meta.json으로 /api/generate와
+// 동일한 파이프라인을 다시 돌린다. 파일을 다시 찾거나 방식을 다시 고를
+// 필요가 없다 — "2. 만들어진 세트" 목록에서 제목만 클릭하면 되는 원클릭
+// 생성의 서버쪽 절반이다.
+router.post('/api/sets/:setName/regenerate', async (req, res, next) => {
+  let tmpFile = null;
+  try {
+    const setDir = resolveSetDir(req.params.setName);
+    const sourcePath = path.join(setDir, 'source.json');
+    if (!fs.existsSync(sourcePath)) {
+      throw httpError('이 세트는 원본 가사 파일이 없어 다시 생성할 수 없습니다.', 404);
+    }
+
+    let meta = {};
+    try {
+      meta = JSON.parse(fs.readFileSync(path.join(setDir, 'source.meta.json'), 'utf8'));
+    } catch {
+      // source.meta.json이 없거나 손상됐어도 source.json만으로 재생성은 가능하다
+      // (youtubeUrl 없이 진행) — 재생성 자체를 막지 않는다.
+    }
+
+    const content = fs.readFileSync(sourcePath, 'utf8');
+    const youtubeUrl = typeof meta.youtubeUrl === 'string' ? meta.youtubeUrl : '';
+    // TASK CS-v1.9 작업 B 요구사항 3 — 원클릭의 목적은 "좋은 결과물을 바로"이므로
+    // 기본 모드는 품질이 가장 높은 gemini다. local(작업 A 이전 세트의 등록 당시
+    // 모드)로 되돌리고 싶다면 본문에 mode를 명시한다.
+    const mode = VALID_MODES.has(req.body?.mode) ? req.body.mode : 'gemini';
+
+    tmpFile = path.join(os.tmpdir(), `social-studio-regen-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, content, 'utf8');
+
+    const { normalized, report } = runSetPackPipeline(tmpFile);
+    const generation = await runGenerationPipeline(normalized, { youtubeUrl, mode });
+
+    res.json(buildGenerationResult(normalized, report, generation));
   } catch (error) {
     next(error);
   } finally {
