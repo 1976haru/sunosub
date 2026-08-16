@@ -204,6 +204,26 @@ function salvageJsonObjects(text) {
   return objects;
 }
 
+/*
+ * TASK CS-v1.8 — intentionally duplicated from tools/yt/app.js's
+ * TRANSLATE_TOKEN_BUDGET / estimateBatchSize() (same situation as
+ * stripLeadingNumber(), CLAUDE.md 3.3: a static page and the server can't
+ * share a module). The client sizes its batches with this exact formula so
+ * a normal request never trips this check — this exists so the server
+ * doesn't just trust that: CLAUDE.md 4.2 requires the server to revalidate
+ * everything the client already checked, not skip it "because the client
+ * already did." If you change the budget or the per-language estimate here,
+ * change tools/yt/app.js's copy too, or the two will silently disagree
+ * about what a safe batch looks like.
+ */
+const TRANSLATE_TOKEN_BUDGET = 12000;
+
+function estimateMaxBatchSize(description) {
+  const descLength = Array.from(String(description || '')).length;
+  const perLanguageTokens = (descLength + 100) / 2;
+  return Math.max(1, Math.floor(TRANSLATE_TOKEN_BUDGET / perLanguageTokens));
+}
+
 const TRANSLATE_RESPONSE_SCHEMA = {
   type: Type.ARRAY,
   items: {
@@ -359,6 +379,20 @@ router.post('/translate', async (req, res, next) => {
     // language-list size just guards against a malformed/huge payload, not
     // against a normal batch.
     if (languages.length > 50) return res.status(400).json({ error: '한 번에 최대 50개 언어까지 처리할 수 있습니다.' });
+
+    // TASK CS-v1.8 — was count-only (the > 50 check above). tools/yt/app.js's
+    // estimateBatchSize() sizes batches on the client, but nothing enforced
+    // that server-side, so "description 4000자 × 50개 언어" sailed straight
+    // through and blew past maxOutputTokens: 16384, getting silently cut off.
+    // Reject before spending the call, and hand back the batch size we'd
+    // actually accept so the caller can re-split and retry.
+    const recommendedBatchSize = estimateMaxBatchSize(description);
+    if (languages.length > recommendedBatchSize) {
+      return res.status(400).json({
+        error: `설명 길이(${Array.from(description).length}자) 기준으로 한 번에 최대 ${recommendedBatchSize}개 언어까지 처리할 수 있습니다. 더 작은 묶음으로 나눠 보내 주세요.`,
+        recommendedBatchSize,
+      });
+    }
 
     const ai = requireGeminiClient();
     const prompt = `You are a professional YouTube metadata localization translator.
