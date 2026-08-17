@@ -309,10 +309,40 @@ function isThinkingUnsupportedError(error) {
  * candidatesTokenCount far under the cap). Real registered output before
  * this fix was already inconsistent about it: 34 of the video's live
  * localizations had already stripped the hashtags themselves, only
- * zh-HK/zh-CN/ja kept them. Rule 8 below fixes this at the source instead
- * of continuing to filter it out after the fact.
+ * zh-HK/zh-CN/ja kept them. The hashtag-exclusion rule below fixes this at
+ * the source instead of continuing to filter it out after the fact.
+ *
+ * TASK 후속(재조사, 2차) — 해시태그를 빼고도 37/50개 언어가 여전히 100자를
+ * 넘었다(실측: 스웨덴어 106, 독일어 112, 헝가리어 119, 그리스어 139).
+ * 원인: "(oldpoplounge의 첫번째 플레이리스트)" 같은 괄호 안 채널명+회차
+ * 표기 자체가 고유명사+숫자라 번역할 실질적 내용이 없는데도, 단어가 긴
+ * 언어로 자연스럽게 옮기면 30~40자가 된다. 새 규칙(7번)이 이 부분만
+ * "(<채널명> Vol. <N>)" 고정 형식으로 못박는다 — 모든 언어에서 길이가
+ * 똑같아지므로(헝가리어 기준 19자 절약), 나머지 규칙(6·8·9번)은 그대로
+ * 둔 채 이 특정 패턴에만 얹는다. Vol.은 음반/플레이리스트 관례로 번역
+ * 없이 전 세계 통용된다는 전제.
+ *
+ * TASK 후속(자동 재시도) — Vol. N 규칙을 넣은 뒤에도 덴마크어·튀르키예어
+ * 2개는 100자를 넘었고(실측 101~108자, 같은 입력에도 매번 달라짐 —
+ * 비결정성), 90자 목표(규칙 5)를 더 조이면 나머지 48개 언어 제목이
+ * 전부 불필요하게 빈약해진다(사용자 판단). 그래서 규칙을 더 조이는 대신
+ * 초과한 언어만 "더 짧게 다시 써 달라"고 재요청한다 — buildLengthRetryNote()가
+ * 그 요청문을 만든다. retryLengths가 없으면(평소 호출) 빈 문자열만 붙으므로
+ * 최초 호출의 프롬프트는 전혀 안 바뀐다.
  */
-function buildTranslatePromptFull(title, description, languages) {
+function buildLengthRetryNote(languages, retryLengths) {
+  if (!retryLengths || !retryLengths.size) return '';
+  const lines = languages
+    .filter((lang) => retryLengths.has(lang))
+    .map((lang) => `- ${lang}: previous attempt was ${retryLengths.get(lang)} characters`);
+  if (!lines.length) return '';
+  return `
+
+LENGTH RETRY — every language in this request previously produced a translatedTitle over the 100-character hard limit (lengths below). Rewrite each one shorter while preserving the same meaning — target at most 85 Unicode characters this time, well under the limit, for extra safety margin. Do not drop or abbreviate the channel/playlist name to shorten it (the earlier rule about never truncating it still applies) — trim descriptive wording instead.
+${lines.join('\n')}`;
+}
+
+function buildTranslatePromptFull(title, description, languages, retryLengths) {
   return `You are a professional YouTube metadata localization translator for a Korean YouTube MUSIC PLAYLIST channel. Every video is a music playlist (mood/genre/era-themed background music). Use that context to resolve ambiguous words — e.g. a word that could mean "pop art" or "pop music" always means MUSIC here; a word that could mean "lyrics" or general "text" in a title refers to song content, not literature or visual art.
 
 Translate the Korean title and description into every target language listed below.
@@ -327,12 +357,14 @@ Rules:
 4. When "6070" (or similar Korean decade shorthand like "7080", "8090") appears as descriptive text — not inside a "#" hashtag — it means "the 1960s and 1970s" ("60년대와 70년대"), a common Korean way to write two consecutive decades together. Render it as a natural decade expression in the target language instead of copying the digits unchanged — for example "60s & 70s" (English), "60er & 70er" (German), "60-70-е" (Russian). Do not leave it as "6070" or "607080".
 5. translatedTitle must be natural and clickable, targeting at most 90 Unicode characters including spaces — leave headroom, do not write up to the limit. Never cut, abbreviate, or truncate the channel/playlist name to make a title fit a length target; if a translation genuinely cannot fit within the limit without cutting the channel name, shorten the rest of the title instead — the channel name must always appear complete.
 6. If the original title has a structural separator between the main title and the channel/playlist name (such as "|", "-", "ㅣ"), keep an equivalent separator in the translation. Do not merge the two parts together with no separator between them.
-7. Preserve tags such as [playlist], [Playlist], and emojis.
-8. If the original title itself contains hashtags (tokens starting with "#", e.g. #올드팝, #7080), do NOT include them in translatedTitle at all — omit them entirely, even numeric-looking ones like #7080. Do not translate them into words either, just remove them. This rule is only about the TITLE; hashtags inside the description are a separate matter (see rule 9 below). Hashtags repeated inside a translated title just add unreadable duplicate text in the target language, and the same hashtags already appear in the description.
-9. Translate normal hashtags naturally, but keep numeric hashtags such as #7080 unchanged.
-10. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
-11. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
-12. Do not add explanations, quotation marks, or extra marketing claims.
+7. If the parenthetical channel/playlist attribution at the end of the title combines a channel name with an ordinal/sequence number (e.g. Korean "(oldpoplounge의 첫번째 플레이리스트)", meaning "(oldpoplounge's first playlist)"), do NOT translate that parenthetical at all. Instead render it in this exact fixed, language-invariant format in every target language: "(<channel name> Vol. <N>)" — keep the channel name exactly as given, convert the Korean ordinal word to its Arabic numeral N (첫번째=1, 두번째=2, 세번째=3, 네번째=4, 다섯번째=5, 여섯번째=6, 일곱번째=7, 여덟번째=8, 아홉번째=9, 열번째=10, and so on), and use the literal abbreviation "Vol." unchanged — never translate "Vol." into another word. Example: "(oldpoplounge의 첫번째 플레이리스트)" becomes "(oldpoplounge Vol. 1)" in every single language, identically. This overrides rule 8 below for this specific parenthetical only. If the title's parenthetical does not match this "channel name + ordinal" pattern, ignore this rule and follow rule 8 instead.
+8. Preserve tags such as [playlist], [Playlist], and emojis.
+9. If the original title itself contains hashtags (tokens starting with "#", e.g. #올드팝, #7080), do NOT include them in translatedTitle at all — omit them entirely, even numeric-looking ones like #7080. Do not translate them into words either, just remove them. This rule is only about the TITLE; hashtags inside the description are a separate matter (see rule 10 below). Hashtags repeated inside a translated title just add unreadable duplicate text in the target language, and the same hashtags already appear in the description.
+10. Translate normal hashtags naturally, but keep numeric hashtags such as #7080 unchanged.
+11. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
+12. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+13. Do not add explanations, quotation marks, or extra marketing claims.
+${buildLengthRetryNote(languages, retryLengths)}
 
 Original title:
 ${title}
@@ -349,7 +381,7 @@ ${description}`;
  * 동일하게 유지하고, description 전용 규칙(해시태그 번역, 타임스탬프 보존)만
  * 뺐다 — 대상이 없는 규칙을 프롬프트에 남겨봐야 토큰만 쓰고 아무 효과가 없다.
  */
-function buildTranslatePromptTitleOnly(title, languages) {
+function buildTranslatePromptTitleOnly(title, languages, retryLengths) {
   return `You are a professional YouTube metadata localization translator for a Korean YouTube MUSIC PLAYLIST channel. Every video is a music playlist (mood/genre/era-themed background music). Use that context to resolve ambiguous words — e.g. a word that could mean "pop art" or "pop music" always means MUSIC here; a word that could mean "lyrics" or general "text" in a title refers to song content, not literature or visual art.
 
 Translate the Korean title into every target language listed below. Only the title is provided — no description.
@@ -364,10 +396,12 @@ Rules:
 4. When "6070" (or similar Korean decade shorthand like "7080", "8090") appears — not inside a "#" hashtag — it means "the 1960s and 1970s" ("60년대와 70년대"), a common Korean way to write two consecutive decades together. Render it as a natural decade expression in the target language instead of copying the digits unchanged — for example "60s & 70s" (English), "60er & 70er" (German), "60-70-е" (Russian). Do not leave it as "6070" or "607080".
 5. translatedTitle must be natural and clickable, targeting at most 90 Unicode characters including spaces — leave headroom, do not write up to the limit. Never cut, abbreviate, or truncate the channel/playlist name to make a title fit a length target; if a translation genuinely cannot fit within the limit without cutting the channel name, shorten the rest of the title instead — the channel name must always appear complete.
 6. If the original title has a structural separator between the main title and the channel/playlist name (such as "|", "-", "ㅣ"), keep an equivalent separator in the translation. Do not merge the two parts together with no separator between them.
-7. Preserve tags such as [playlist], [Playlist], and emojis.
-8. If the original title contains hashtags (tokens starting with "#", e.g. #올드팝, #7080), do NOT include them in translatedTitle at all — omit them entirely, even numeric-looking ones like #7080. Do not translate them into words either, just remove them. Hashtags repeated inside a translated title just add unreadable duplicate text in the target language, and no description is being translated in this request for them to belong to anyway.
-9. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
-10. Do not add explanations, quotation marks, or extra marketing claims.
+7. If the parenthetical channel/playlist attribution at the end of the title combines a channel name with an ordinal/sequence number (e.g. Korean "(oldpoplounge의 첫번째 플레이리스트)", meaning "(oldpoplounge's first playlist)"), do NOT translate that parenthetical at all. Instead render it in this exact fixed, language-invariant format in every target language: "(<channel name> Vol. <N>)" — keep the channel name exactly as given, convert the Korean ordinal word to its Arabic numeral N (첫번째=1, 두번째=2, 세번째=3, 네번째=4, 다섯번째=5, 여섯번째=6, 일곱번째=7, 여덟번째=8, 아홉번째=9, 열번째=10, and so on), and use the literal abbreviation "Vol." unchanged — never translate "Vol." into another word. Example: "(oldpoplounge의 첫번째 플레이리스트)" becomes "(oldpoplounge Vol. 1)" in every single language, identically. This overrides rule 9 below for this specific parenthetical only. If the title's parenthetical does not match this "channel name + ordinal" pattern, ignore this rule and follow rule 9 instead.
+8. Preserve tags such as [playlist], [Playlist], and emojis.
+9. If the original title contains hashtags (tokens starting with "#", e.g. #올드팝, #7080), do NOT include them in translatedTitle at all — omit them entirely, even numeric-looking ones like #7080. Do not translate them into words either, just remove them. Hashtags repeated inside a translated title just add unreadable duplicate text in the target language, and no description is being translated in this request for them to belong to anyway.
+10. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+11. Do not add explanations, quotation marks, or extra marketing claims.
+${buildLengthRetryNote(languages, retryLengths)}
 
 Original title:
 ${title}`;
@@ -670,6 +704,74 @@ router.post('/translate', async (req, res, next) => {
         .filter((r) => Array.from(r.translatedTitle).length > 100)
         .map((r) => ({ language: r.language, length: Array.from(r.translatedTitle).length }));
       fetchedResults = fetchedResults.filter((r) => Array.from(r.translatedTitle).length <= 100);
+
+      // TASK 후속(자동 재시도) — 100자를 넘은 언어만 골라 "더 짧게 다시
+      // 써 달라"고 최대 2회까지 재요청한다. 규칙(90자 목표)을 더 조이지
+      // 않는 이유: 50개 중 1~2개만 걸리는 드문 케이스인데 규칙을 조이면
+      // 나머지 48개 언어 전부가 불필요하게 빈약해지고, 그마저도 비결정성
+      // 때문에(같은 입력에 101자/108자로 매번 다름) 확률적으로 또 넘칠 수
+      // 있다(사용자 확인). 재시도 호출도 generateTranslation()을 그대로
+      // 타므로 withRetry() -> recordGeminiUsage()가 평소와 동일하게 집계한다
+      // (요구사항 3) — 별도 카운팅 코드가 필요 없다.
+      const MAX_OVERSIZE_RETRIES = 2;
+      let oversizedRetryRounds = 0;
+      let stillOversized = oversizedTitles;
+      while (stillOversized.length > 0 && oversizedRetryRounds < MAX_OVERSIZE_RETRIES) {
+        oversizedRetryRounds += 1;
+        const retryLanguages = stillOversized.map((o) => o.language);
+        const retryLengths = new Map(stillOversized.map((o) => [o.language, o.length]));
+
+        let retryResponse;
+        try {
+          const retryAi = requireGeminiClient('paid');
+          const retryPrompt = scope === 'title'
+            ? buildTranslatePromptTitleOnly(title, retryLanguages, retryLengths)
+            : buildTranslatePromptFull(title, description, retryLanguages, retryLengths);
+          retryResponse = await generateTranslation(retryAi, retryPrompt, scope, retryLanguages.length);
+        } catch {
+          // 429/서버 오류 등 — 재시도를 그만두고 남은 언어는 그대로 초과
+          // 목록에 남긴다. 원래 있던 primary 결과는 이미 fetchedResults에
+          // 들어 있으니 이 요청 전체를 실패시키지 않는다.
+          break;
+        }
+
+        let retryParsed;
+        try {
+          retryParsed = parseJsonText(retryResponse.text);
+          if (!Array.isArray(retryParsed)) throw new Error('재시도 응답 형식이 올바르지 않습니다.');
+        } catch {
+          const salvaged = salvageJsonObjects(retryResponse.text);
+          if (!salvaged.length) break;
+          retryParsed = salvaged;
+        }
+
+        const retryResults = retryParsed.map((item, index) => ({
+          language: retryLanguages[index] || String(item.language || ''),
+          translatedTitle: String(item.translatedTitle || '').trim(),
+          translatedDescription: String(item.translatedDescription || '').trim(),
+        }));
+
+        const respondedLanguages = new Set();
+        const nextOversized = [];
+        for (const r of retryResults) {
+          respondedLanguages.add(r.language);
+          const len = Array.from(r.translatedTitle).length;
+          if (len > 100) {
+            nextOversized.push({ language: r.language, length: len });
+          } else {
+            fetchedResults.push(r);
+          }
+        }
+        // 재시도 응답에 아예 안 실린 언어(모델이 빠뜨림)도 여전히 초과
+        // 목록에 남긴다 — 실제 새 길이를 모르니 이전 길이를 그대로 보고한다.
+        for (const lang of retryLanguages) {
+          if (!respondedLanguages.has(lang)) {
+            nextOversized.push({ language: lang, length: retryLengths.get(lang) });
+          }
+        }
+        stillOversized = nextOversized;
+      }
+      oversizedTitles = stillOversized; // 재시도로도 못 줄인 것만 최종 보고
 
       // TASK CS-v1.8 follow-up — was gated on `truncated`, i.e. only computed
       // when parseJsonText() needed salvageJsonObjects() to recover a
