@@ -526,16 +526,25 @@ async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid 
   $('progressWrap').classList.remove('hidden');
   $('progressBar').style.width = '0%';
 
+  // TASK 후속 — 설명(full)을 title보다 먼저 돌린다. 한도가 부족할 때
+  // "아직 하나도 없는 쪽"이 먼저 확보돼야 한다: title은 이미 유튜브에
+  // 등록까지 끝난 언어가 많아 다시 안 해도 되는 경우가 흔하고, full은
+  // 보통 개수가 더 적어(설명 대상만 골라 쓰는 게 이 기능의 취지) 먼저
+  // 끝내기도 유리하다. title이 캐시에 남아있으면 재실행해도 대부분
+  // 캐시 히트라 실제 호출은 거의 안 나간다(getCachedTranslations가
+  // scope까지 키에 포함하므로 — lib/ytTranslationCache.js CS-v2.1 작업 B).
   const { full, titleOnly } = splitByDescriptionScope(languagesToProcess);
   const groups = [];
-  if (titleOnly.length) groups.push({ scope: 'title', languages: titleOnly });
   if (full.length) groups.push({ scope: 'full', languages: full });
+  if (titleOnly.length) groups.push({ scope: 'title', languages: titleOnly });
 
   let cacheHitTotal = 0;
   let missingTotal = [];
   let quotaError = null;
+  let currentGroupIndex = -1; // TASK 후속 — 429가 어느 그룹에서 났고, 그 뒤로 뭐가 아예 시작도 안 됐는지 알려면 필요
   try {
     for (let g = 0; g < groups.length; g++) {
+      currentGroupIndex = g;
       const { cacheHitCount, missing } = await runOneScopeGroup(languagesToProcess, groups[g].languages, groups[g].scope, { forcePaid });
       cacheHitTotal += cacheHitCount;
       missingTotal.push(...missing);
@@ -563,7 +572,11 @@ async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid 
       // TASK CS-v2.1 — 두 그룹 중 하나가 429로 막히면 나머지 그룹(예: 아직
       // 시도 안 한 설명-대상 그룹)도 이어서 부르지 않는다 — 남은 전체를
       // pendingLanguages로 다시 계산해 선택지에 보여준다.
-      showQuotaChoice(pendingLanguages(languagesToProcess), quotaError);
+      // TASK 후속 — currentGroupIndex 다음 그룹들은 fetch 자체가 한 번도
+      // 안 나갔다("실패"가 아니라 "시작 못 함") — showQuotaChoice에 같이
+      // 넘겨서 화면에서 구분해 보여준다.
+      const skippedGroups = groups.slice(currentGroupIndex + 1);
+      showQuotaChoice(pendingLanguages(languagesToProcess), quotaError, skippedGroups);
     } else {
       const remaining = pendingLanguages(languagesToProcess).length;
       setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. 처리 중 오류가 발생했습니다: ${error.message}`);
@@ -626,7 +639,15 @@ function quotaScopeNote(error) {
   return ' 분당 한도인지 하루 한도인지 이번 응답만으로는 확인되지 않았습니다 — 1~2분 후 다시 시도해 보고, 계속 실패하면 하루 한도일 가능성이 큽니다.';
 }
 
-function showQuotaChoice(pendingList, error) {
+function scopeGroupLabel(scope) {
+  return scope === 'full' ? '설명 번역' : '제목 번역';
+}
+
+// TASK 후속 — skippedGroups는 이번 실행에서 fetch 자체가 한 번도 안 나간
+// 그룹들이다(429가 난 그룹 다음에 있던 것들). "실패"와 "시작도 못 함"은
+// 사용자 입장에서 판단이 다르므로("다시 시도하면 될까?" vs "애초에 시도가
+// 안 됐구나") 구분해서 명시한다.
+function showQuotaChoice(pendingList, error, skippedGroups = []) {
   const box = $('quotaChoice');
   const n = pendingList.length;
   const note = quotaScopeNote(error);
@@ -635,11 +656,18 @@ function showQuotaChoice(pendingList, error) {
   $('quotaChoicePaidBtn').classList.toggle('hidden', !offerPaidRetry);
   $('quotaChoiceSetupBtn').classList.toggle('hidden', state.paidKeyConfigured || error.dailyLimitReached);
 
-  $('quotaChoiceText').textContent = offerPaidRetry
+  let text = offerPaidRetry
     ? `무료 한도를 모두 썼습니다.${note} 남은 ${n}개 언어를 유료 키로 이어서 번역할까요? 비용이 발생합니다.`
     : state.paidKeyConfigured
       ? `무료·유료 모두 오늘 한도에 도달했습니다.${note} 남은 언어는 ${n}개입니다.`
       : `무료 한도를 모두 썼습니다.${note} 남은 ${n}개 언어는 내일 다시 시도하거나, 유료 키를 설정하면 지금 바로 이어서 할 수 있습니다.`;
+
+  if (skippedGroups.length) {
+    const names = skippedGroups.map((g) => `${scopeGroupLabel(g.scope)}(${g.languages.length}개)`).join(', ');
+    text += ` ${names}은(는) 한도 때문에 시작하지 못했습니다.`;
+  }
+
+  $('quotaChoiceText').textContent = text;
 
   box.dataset.pendingLanguages = JSON.stringify(pendingList);
   box.classList.remove('hidden');
