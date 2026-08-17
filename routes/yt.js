@@ -922,9 +922,21 @@ router.post('/publish-localizations', async (req, res, next) => {
 
     // Read-modify-write: everything already on the video is carried over
     // verbatim, because videos.update deletes any omitted property.
+    //
+    // TASK CS-v2.1 작업 D — item.description이 비어 있으면(scope:'title'로
+    // 번역된 언어) description 필드를 아예 뺀다. 실제 API로 확인한 결과
+    // (2026-08-17, 테스트 영상 h28QuWIhr0w에 title만 있고 description
+    // 필드 자체가 없는 localization을 실제로 등록 후 유튜브 화면에서
+    // hl=sw로 직접 확인): description을 생략하면 유튜브가 그 언어를 볼 때
+    // 원문(기본 언어) 설명을 그대로 보여준다 — 빈 설명으로 보이지 않는다.
+    // 그래서 빈 문자열을 명시적으로 넣지 않는다: 빈 문자열을 넣으면 그
+    // 값 자체가 "설명은 빈 문자열"로 저장되어 원문 폴백이 안 될 수 있다
+    // (이 자리에서 굳이 확인하지 않음 — 생략이 이미 검증된 안전한 선택).
     const localizations = { ...existing };
     for (const item of planned) {
-      localizations[item.code] = { title: item.title, description: item.description };
+      const entry = { title: item.title };
+      if (item.description) entry.description = item.description;
+      localizations[item.code] = entry;
     }
     const snippet = {
       title: video.snippet?.title || '',
