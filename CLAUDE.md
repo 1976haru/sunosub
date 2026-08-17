@@ -22,7 +22,7 @@
 | 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
 | 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
 
-현재 버전: **CS-v2.0**
+현재 버전: **CS-v2.1**
 
 ---
 
@@ -112,6 +112,14 @@ npm run check    # node --check server.js  ← server.js 하나만 문법 검사
 
 > 알려진 불일치: `routes/shorts.js:165`는 `keyStore` 대신 `process.env`를 직접 읽습니다.
 > 동작에는 문제가 없지만 shorts를 손볼 일이 있으면 `currentKey()`로 통일하세요.
+
+**CS-v2.1부터 `/translate`에 `scope`(`'title'` | `'full'`, 기본값 `'title'`)가 있습니다.**
+제목만 번역하면 50개 언어가 호출 1회로 끝나(설명 미전송 + 출력 스키마도 제목만 요청 —
+실측 43,142 → 1,523 토큰, 96.5% 감소) 무료 한도로 충분한 경우가 많습니다. 설명까지
+번역할 언어는 `tools/yt/app.js`의 "설명까지 번역할 언어" 영역에서 따로 고르고, 그
+언어들만 `scope:'full'`로 별도 요청이 나갑니다. 캐시 키(`lib/ytTranslationCache.js`)에도
+`scope`가 들어가 있어 `title`로 캐시된 항목이 `full` 조회에 잘못 히트하지 않습니다 —
+새 caller를 추가할 때 `scope`를 빠뜨리면 캐시가 조용히 오염됩니다.
 
 ---
 
