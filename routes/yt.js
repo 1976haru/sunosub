@@ -295,16 +295,23 @@ const TRANSLATE_RESPONSE_SCHEMA_TITLE_ONLY = {
 /*
  * TASK CS-v1.7 — thinkingConfig:{thinkingBudget:0} turns off "thinking" so
  * its tokens don't eat into maxOutputTokens on a plain translation, but not
- * every model/account combo recognizes the field: those reject it with a
- * 400 mentioning "thinking". That support is fixed for the life of this
- * process for a given model (see skipThinkingConfigByModel's TASK CS-v2.2
- * comment near the top of this file for why it's now keyed by model), so
- * remember it instead of re-discovering it on every call.
+ * every model/account combo recognizes the field. That support is fixed for
+ * the life of this process for a given model (see skipThinkingConfigByModel's
+ * TASK CS-v2.2 comment near the top of this file for why it's now keyed by
+ * model), so remember it instead of re-discovering it on every call.
+ *
+ * TASK CS-v2.2 후속 — this used to be a message-text check
+ * (/thinking/i.test(error.message)), same fragile pattern already fixed once
+ * for isRateLimitError (b73e0c3): 실측(gemini-3.5-flash-lite)으로 확인됨,
+ * 이 모델이 thinkingConfig를 거부할 때 실제 메시지는 "Request contains an
+ * invalid argument." — "thinking"이라는 단어가 아예 없어서 그 검사로는 절대
+ * 안 걸렸다. status===400이라는 사실 자체 말고는 믿을 수 있는 신호가 없으므로
+ * (구글이 어떤 400 메시지를 보낼지는 문서화돼 있지 않다), 문자열을 더
+ * 정교하게 매칭하려 하지 않고 그 대신 "실제로 thinkingConfig를 빼고
+ * 재시도해서 되는지"로 직접 검증한다 — 아래 generateWithOptionalThinking() 참고.
  */
-function isThinkingUnsupportedError(error) {
-  const status = Number(error?.status || error?.code || 0);
-  if (status !== 400) return false;
-  return /thinking/i.test(String(error?.message || ''));
+function isRetryableAsPlainRequest(error) {
+  return Number(error?.status || error?.code || 0) === 400;
 }
 
 /*
@@ -462,14 +469,30 @@ async function generateWithOptionalThinking(ai, { contents, config }, { label, c
     contents,
     config: { ...config, ...(includeThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
   });
+  const alreadySkipping = skipThinkingConfigByModel.get(model) === true;
   try {
-    return await withRetry(() => call(skipThinkingConfigByModel.get(model) !== true), { label, tier: 'paid', context });
+    return await withRetry(() => call(!alreadySkipping), { label, tier: 'paid', context });
   } catch (error) {
-    if (skipThinkingConfigByModel.get(model) !== true && isThinkingUnsupportedError(error)) {
+    // TASK CS-v2.2 후속 — 이미 thinkingConfig 없이 보낸 상태에서 난 400은
+    // thinkingConfig 문제일 수가 없으니 그대로 던진다(무한 재시도 방지).
+    if (alreadySkipping || !isRetryableAsPlainRequest(error)) throw error;
+    try {
+      const retryResult = await withRetry(() => call(false), { label, tier: 'paid', context });
+      // 빼고 보냈더니 성공했다 — 이 모델이 thinkingConfig를 거부한다는 게
+      // 문자열 매칭이 아니라 실제 재시도로 증명됐다. 다음부터는 처음부터 뺀다.
       skipThinkingConfigByModel.set(model, true);
-      return withRetry(() => call(false), { label, tier: 'paid', context });
+      return retryResult;
+    } catch (retryError) {
+      // 빼고 보냈는데도 또 400이면 thinkingConfig 문제가 아니라 이 모델이
+      // 이 요청 자체(스키마, config 조합 등)를 거부하는 다른 이유다. 원문
+      // JSON만 보여주면 사용자가 뭘 해야 할지 모르니 다음 행동을 붙여준다.
+      if (isRetryableAsPlainRequest(retryError)) {
+        const friendly = new Error(`이 모델("${model}")이 요청 형식을 거부했습니다. 다른 모델을 선택해 보세요. (원본: ${retryError.message})`);
+        friendly.status = 400;
+        throw friendly;
+      }
+      throw retryError;
     }
-    throw error;
   }
 }
 
