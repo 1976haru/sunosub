@@ -69,7 +69,10 @@ function resolveFileUrl(fileUrl) {
   const relative = decodeURIComponent(String(fileUrl).slice('/api/shorts/files/'.length));
   const absolute = path.resolve(projectsDir, relative);
   const base = path.resolve(projectsDir) + path.sep;
-  if (!absolute.startsWith(base)) throw new Error('허용되지 않은 파일 경로입니다.');
+  // TASK 후속 — 경로 탈출 검증 실패는 보안 관련 거부다. status 없이 던지면
+  // 서버 공용 에러 미들웨어(server.js)가 기본값 500으로 응답해, 로그·모니터링에서
+  // "서버 오류"와 뒤섞여 안 보인다. 400으로 명시해 구분되게 한다.
+  if (!absolute.startsWith(base)) throw Object.assign(new Error('허용되지 않은 파일 경로입니다.'), { status: 400 });
   return absolute;
 }
 
