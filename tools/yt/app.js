@@ -32,6 +32,11 @@ const state = {
   // TASK CS-v2.1 작업 C — 설명까지 번역할 언어. state.selected의 부분집합
   // (그 안에서만 의미가 있다). 기본값은 비어있음 = 전 언어 제목만.
   descriptionScope: new Set(),
+  // TASK CS-v2.1 후속 버그 [1] — 언어별 연속 실패 횟수. missingLanguages에
+  // 나올 때마다 늘고, 그 언어가 실제로 성공하면(upsertResults) 0으로
+  // 돌아간다(Map에서 삭제). 새로고침 시 초기화되는 건 의도됨 — 세션을
+  // 새로 시작하면 "몇 번 실패했었는지"보다 "지금 다시 해보자"가 맞다.
+  languageFailCounts: new Map(),
   // TASK CS-v1.8 follow-up — drives the confirm-box/regenerate-button
   // wording: "비용이 발생합니다" only makes sense when a paid key is
   // actually configured. Set from /api/yt/status in loadStatus().
@@ -324,8 +329,19 @@ function estimateBatchSize(scope, title, description, totalSelected) {
   return Math.max(1, Math.min(totalSelected, size));
 }
 
+/*
+ * TASK CS-v2.1 후속 버그 [2] — 결과가 있다는 것과 "그 언어에 필요한 만큼
+ * 다 됐다"는 것은 다르다. 설명 대상(state.descriptionScope)으로 고른
+ * 언어인데 결과가 scope:'title'로만 있으면(설명 번역 전) 아직 안 끝난
+ * 것으로 봐야 한다 — 안 그러면 "이어서 번역"이 그 언어를 영원히
+ * 건너뛴다. upsertResults()가 이미 결과마다 실제 적용된 scope를 저장해
+ * 두므로 그걸 그대로 쓴다.
+ */
 function hasResultFor(language) {
-  return state.results.some(r => r.language === language);
+  const result = state.results.find(r => r.language === language);
+  if (!result) return false;
+  if (state.descriptionScope.has(language) && result.scope !== 'full') return false;
+  return true;
 }
 
 /*
@@ -348,6 +364,15 @@ function upsertResults(newResults, scope) {
     const index = state.results.findIndex(r => r.language === result.language);
     if (index >= 0) state.results[index] = withScope;
     else state.results.push(withScope);
+    state.languageFailCounts.delete(result.language); // TASK CS-v2.1 후속 버그 [1] — 성공하면 연속 실패 카운트 초기화
+  }
+}
+
+// TASK CS-v2.1 후속 버그 [1] — missingLanguages(성공 응답의 일부 누락이든,
+// 429 실패 응답의 미처리 언어든)에 나온 언어의 연속 실패 횟수를 늘린다.
+function recordMissing(languages) {
+  for (const lang of languages || []) {
+    state.languageFailCounts.set(lang, (state.languageFailCounts.get(lang) || 0) + 1);
   }
 }
 
@@ -377,11 +402,36 @@ function updateContinueButton() {
   const pending = pendingLanguages(currentSelectedLanguages());
   if (!state.results.length || !pending.length) {
     btn.classList.add('hidden');
+    renderPendingLanguages();
     return;
   }
   btn.classList.remove('hidden');
   btn.disabled = state.translating;
   btn.textContent = `이어서 번역 (${pending.length}개 남음)`;
+  renderPendingLanguages();
+}
+
+/*
+ * TASK CS-v2.1 후속 버그 [1] — 개수만이 아니라 실제 언어 이름을 보여준다.
+ * 접었다 펼 수 있게 하고(요구사항), 반복 실패한 언어는 몇 번 실패했는지도
+ * 같이 표시한다. updateContinueButton()이 부르는 것과 별개로
+ * runOneScopeGroup()이 배치마다 직접 불러 진행 중에도 갱신되게 한다.
+ */
+function renderPendingLanguages() {
+  const box = $('pendingLanguagesBox');
+  const pending = pendingLanguages(currentSelectedLanguages());
+  if (!state.results.length || !pending.length) {
+    box.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+  const listEl = $('pendingLanguagesList');
+  const expanded = !listEl.classList.contains('hidden');
+  $('pendingToggleBtn').textContent = `${expanded ? '남은 언어 접기' : '남은 언어 보기'} (${pending.length}개)`;
+  listEl.innerHTML = pending.map(lang => {
+    const failCount = state.languageFailCounts.get(lang) || 0;
+    return `<div>${escapeHtml(lang)}${failCount > 0 ? ` <span class="fail-note">(${failCount}회 연속 실패)</span>` : ''}</div>`;
+  }).join('');
 }
 
 /**
@@ -391,7 +441,18 @@ function updateContinueButton() {
  * 버튼 상태는 이 함수가 그룹 전체에 걸쳐 한 번만 관리한다 — 그룹 사이에
  * 버튼이 깜빡이며 잠깐 풀리는 걸 막기 위해.
  */
-async function runOneScopeGroup(languages, scope, { forcePaid }) {
+// TASK CS-v2.1 후속 버그 [1] — "N개 완료, M개 남음: (언어명 나열)"을 한
+// 줄로 만든다. overallLanguages는 이번 실행 전체의 대상(그룹 하나가
+// 아니라)이라 "완료/남음"이 그룹이 바뀌어도 계속 같은 기준으로 보인다.
+function describeProgress(overallLanguages) {
+  const stillPending = pendingLanguages(overallLanguages);
+  const doneCount = overallLanguages.length - stillPending.length;
+  if (!stillPending.length) return `${doneCount}개 완료 — 전부 끝났습니다`;
+  const preview = stillPending.slice(0, 8).join(', ') + (stillPending.length > 8 ? ` 외 ${stillPending.length - 8}개` : '');
+  return `${doneCount}개 완료, ${stillPending.length}개 남음: ${preview}`;
+}
+
+async function runOneScopeGroup(overallLanguages, languages, scope, { forcePaid }) {
   const title = $('sourceTitle').value.trim();
   const description = $('sourceDescription').value;
   const scopeLabel = scope === 'full' ? '제목+설명' : '제목만';
@@ -399,20 +460,25 @@ async function runOneScopeGroup(languages, scope, { forcePaid }) {
   const batches = chunk(languages, batchSize);
   let cacheHitCount = 0;
   const missing = [];
-  let processed = 0;
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
-    processed += batch.length;
-    $('progressText').textContent = `[${scopeLabel}] ${languages.length}개 언어 중 ${processed}개 처리 중 · 묶음 ${i + 1}/${batches.length}`;
     const data = await api('/api/yt/translate', {
       method: 'POST',
       body: JSON.stringify({ title, description, languages: batch, scope, ...(forcePaid ? { forcePaid: true } : {}) }),
     });
     cacheHitCount += data.fromCache?.length || 0;
-    if (data.missingLanguages?.length) missing.push(...data.missingLanguages);
+    if (data.missingLanguages?.length) {
+      missing.push(...data.missingLanguages);
+      recordMissing(data.missingLanguages);
+    }
     upsertResults(data.results, data.scope || scope);
     renderResults();
     saveLocal();
+    // TASK CS-v2.1 후속 버그 [1] 요구사항 — 번역이 끝날 때마다(묶음 하나가
+    // 끝날 때마다) 완료/남음을 알린다. [${scopeLabel}] 접두는 지금 어느
+    // 그룹(제목만/제목+설명)을 처리 중인지 구분하기 위해 유지한다.
+    $('progressText').textContent = `[${scopeLabel} · 묶음 ${i + 1}/${batches.length}] ${describeProgress(overallLanguages)}`;
+    renderPendingLanguages();
     // TASK CS-v1.7 — no client-side sleep here anymore; lib/gemini.js's
     // process-wide queue paces every call (including these), and pacing
     // it from two places would just have them fight each other.
@@ -452,7 +518,7 @@ async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid 
   let quotaError = null;
   try {
     for (let g = 0; g < groups.length; g++) {
-      const { cacheHitCount, missing } = await runOneScopeGroup(groups[g].languages, groups[g].scope, { forcePaid });
+      const { cacheHitCount, missing } = await runOneScopeGroup(languagesToProcess, groups[g].languages, groups[g].scope, { forcePaid });
       cacheHitTotal += cacheHitCount;
       missingTotal.push(...missing);
       $('progressBar').style.width = `${Math.round(((g + 1) / groups.length) * 100)}%`;
@@ -471,7 +537,9 @@ async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid 
     if (error.quotaExhausted) {
       quotaError = error;
       upsertResults(error.results || [], error.scope);
+      recordMissing(error.missingLanguages); // TASK CS-v2.1 후속 버그 [1] — 429로 못 받은 언어도 연속 실패로 집계
       renderResults();
+      renderPendingLanguages();
       saveLocal();
       setError('translateError');
       // TASK CS-v2.1 — 두 그룹 중 하나가 429로 막히면 나머지 그룹(예: 아직
@@ -815,6 +883,10 @@ function setupEvents() {
   });
   $('translateBtn').addEventListener('click', onTranslateClick);
   $('continueTranslateBtn').addEventListener('click', onContinueTranslateClick);
+  $('pendingToggleBtn').addEventListener('click', () => {
+    $('pendingLanguagesList').classList.toggle('hidden');
+    renderPendingLanguages();
+  });
   $('translateConfirmYesBtn').addEventListener('click', async () => {
     const selected = JSON.parse($('translateConfirm').dataset.pendingSelected || '[]');
     hideTranslateConfirm();

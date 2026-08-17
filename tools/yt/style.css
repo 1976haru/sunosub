@@ -54,6 +54,7 @@ textarea { resize: vertical; line-height: 1.6; }
 .btn.secondary { background: #13243d; border-color: var(--line); color: #dce8fa; }
 .btn.wide { width: 100%; margin-top: 16px; padding: 14px; }
 .text-btn { background: none; border: 0; color: var(--cyan); cursor: pointer; font-weight: 800; font-size: 12px; }
+.fail-note { color: #ffd166; font-size: 12px; } /* TASK CS-v2.1 후속 버그 [1] — 연속 실패 표시, badge.warn과 같은 색 */
 .fields-grid { display: grid; gap: 17px; margin-top: 20px; }
 .field-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .counter { color: var(--muted); font-size: 12px; }
