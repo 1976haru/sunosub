@@ -219,13 +219,20 @@ function salvageJsonObjects(text) {
  */
 const TRANSLATE_TOKEN_BUDGET = 12000;
 
-function estimateMaxBatchSize(description) {
-  const descLength = Array.from(String(description || '')).length;
-  const perLanguageTokens = (descLength + 100) / 2;
+// TASK CS-v2.1 작업 A 요구사항 3 — scope:'title'이면 언어당 출력량을 description이
+// 아니라 title 길이로 추정한다. title은 description보다 30배 이상 짧아
+// (실측: 4,492 vs 38,650 출력 토큰, 50개 언어 기준) 같은 예산 안에 훨씬 많은
+// 언어가 들어간다 — 이게 "호출 4회 → 1회"로 줄어드는 실질적인 이유다.
+// tools/yt/app.js의 estimateBatchSize()와 반드시 같은 공식을 유지한다
+// (CLAUDE.md 3.3의 stripLeadingNumber() 중복과 같은 이유 — 정적 페이지와
+// 서버가 모듈을 공유할 수 없다).
+function estimateMaxBatchSize(scope, title, description) {
+  const baseLength = Array.from(String(scope === 'title' ? title : description) || '').length;
+  const perLanguageTokens = (baseLength + 100) / 2;
   return Math.max(1, Math.floor(TRANSLATE_TOKEN_BUDGET / perLanguageTokens));
 }
 
-const TRANSLATE_RESPONSE_SCHEMA = {
+const TRANSLATE_RESPONSE_SCHEMA_FULL = {
   type: Type.ARRAY,
   items: {
     type: Type.OBJECT,
@@ -235,6 +242,22 @@ const TRANSLATE_RESPONSE_SCHEMA = {
       translatedDescription: { type: Type.STRING },
     },
     required: ['language', 'translatedTitle', 'translatedDescription'],
+  },
+};
+
+// TASK CS-v2.1 작업 A — scope:'title'용 스키마. translatedDescription을
+// 아예 요청하지 않는다 — 스키마에 필드가 있으면 모델이 뭐라도 채워 넣으려
+// 하고, 그만큼 출력 토큰을 쓴다. 절감의 절반은 입력(설명 미전송), 나머지
+// 절반은 이 출력 스키마 축소에서 나온다(실측: 출력 38,650 -> 1,150 토큰).
+const TRANSLATE_RESPONSE_SCHEMA_TITLE_ONLY = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      language: { type: Type.STRING },
+      translatedTitle: { type: Type.STRING },
+    },
+    required: ['language', 'translatedTitle'],
   },
 };
 
@@ -272,7 +295,7 @@ function isThinkingUnsupportedError(error) {
  * Rules 3-6 below address these directly; the "MUSIC PLAYLIST" framing
  * in the intro line addresses #5.
  */
-function buildTranslatePrompt(title, description, languages) {
+function buildTranslatePromptFull(title, description, languages) {
   return `You are a professional YouTube metadata localization translator for a Korean YouTube MUSIC PLAYLIST channel. Every video is a music playlist (mood/genre/era-themed background music). Use that context to resolve ambiguous words — e.g. a word that could mean "pop art" or "pop music" always means MUSIC here; a word that could mean "lyrics" or general "text" in a title refers to song content, not literature or visual art.
 
 Translate the Korean title and description into every target language listed below.
@@ -298,6 +321,37 @@ ${title}
 
 Original description:
 ${description}`;
+}
+
+/*
+ * TASK CS-v2.1 작업 A 요구사항 2 — scope:'title'일 때 쓰는 프롬프트. description을
+ * 아예 프롬프트 문자열에 넣지 않는다: 보내고 결과만 버리면 입력 토큰은 그대로
+ * 나가므로, 실제로 절감하려면 안 보내야 한다. "손대지 말 것"대로 제목 관련
+ * 규칙(조작 방지, 6070 표기, 길이·구분자)은 buildTranslatePromptFull과 전부
+ * 동일하게 유지하고, description 전용 규칙(해시태그 번역, 타임스탬프 보존)만
+ * 뺐다 — 대상이 없는 규칙을 프롬프트에 남겨봐야 토큰만 쓰고 아무 효과가 없다.
+ */
+function buildTranslatePromptTitleOnly(title, languages) {
+  return `You are a professional YouTube metadata localization translator for a Korean YouTube MUSIC PLAYLIST channel. Every video is a music playlist (mood/genre/era-themed background music). Use that context to resolve ambiguous words — e.g. a word that could mean "pop art" or "pop music" always means MUSIC here; a word that could mean "lyrics" or general "text" in a title refers to song content, not literature or visual art.
+
+Translate the Korean title into every target language listed below. Only the title is provided — no description.
+
+Target languages:
+${languages.map((x, i) => `${i + 1}. ${x}`).join('\n')}
+
+Rules:
+1. Return exactly one object per requested target language, in the same order.
+2. language must exactly match the target-language label supplied above.
+3. Do not add any fact, year, number, or detail that is not present in the original text. Never expand "6070" (or similar) into "60, 70, 80" or introduce any decade/number that isn't literally there.
+4. When "6070" (or similar Korean decade shorthand like "7080", "8090") appears — not inside a "#" hashtag — it means "the 1960s and 1970s" ("60년대와 70년대"), a common Korean way to write two consecutive decades together. Render it as a natural decade expression in the target language instead of copying the digits unchanged — for example "60s & 70s" (English), "60er & 70er" (German), "60-70-е" (Russian). Do not leave it as "6070" or "607080".
+5. translatedTitle must be natural and clickable, targeting at most 90 Unicode characters including spaces — leave headroom, do not write up to the limit. Never cut, abbreviate, or truncate the channel/playlist name to make a title fit a length target; if a translation genuinely cannot fit within the limit without cutting the channel name, shorten the rest of the title instead — the channel name must always appear complete.
+6. If the original title has a structural separator between the main title and the channel/playlist name (such as "|", "-", "ㅣ"), keep an equivalent separator in the translation. Do not merge the two parts together with no separator between them.
+7. Preserve tags such as [playlist], [Playlist], and emojis.
+8. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+9. Do not add explanations, quotation marks, or extra marketing claims.
+
+Original title:
+${title}`;
 }
 
 /*
@@ -336,13 +390,19 @@ async function generateWithOptionalThinking(ai, { contents, config }, { label })
   }
 }
 
-async function generateTranslation(ai, prompt) {
+async function generateTranslation(ai, prompt, scope) {
   // TASK CS-v1.8 — translate is one of the two paid-tier call sites (see
   // lib/keyStore.js's currentKey('paid')); everything else in this file
   // stays on the free tier.
+  // TASK CS-v2.1 — maxOutputTokens stays 16384 for both scopes. It's a cap,
+  // not a target: Gemini stops when it's actually done, so the token
+  // savings come entirely from the smaller prompt/schema above, not from
+  // shrinking this ceiling. Lowering it wouldn't save anything and would
+  // only risk truncating a legitimately long scope:'full' batch.
+  const schema = scope === 'title' ? TRANSLATE_RESPONSE_SCHEMA_TITLE_ONLY : TRANSLATE_RESPONSE_SCHEMA_FULL;
   return generateWithOptionalThinking(ai, {
     contents: prompt,
-    config: { responseMimeType: 'application/json', responseSchema: TRANSLATE_RESPONSE_SCHEMA, maxOutputTokens: 16384 },
+    config: { responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 16384 },
   }, { label: 'yt/translate' });
 }
 
@@ -462,6 +522,11 @@ router.post('/translate', async (req, res, next) => {
         error: '유료 키가 설정되어 있지 않아 유료로 이어서 번역할 수 없습니다. 상단 배지에서 유료 키를 먼저 설정해 주세요.',
       });
     }
+    // TASK CS-v2.1 작업 A 요구사항 1 — 명시되지 않으면 'title'이 기본값이다.
+    // 'full'이 아닌 모든 값(오타, 누락 포함)도 안전하게 'title'로 떨어진다 —
+    // CLAUDE.md의 "조용한 오동작보다 안전한 기본값" 관행(예: social-studio의
+    // VALID_MODES 기본값 'local')과 같은 이유다.
+    const scope = req.body?.scope === 'full' ? 'full' : 'title';
     if (!title) return res.status(400).json({ error: '번역할 제목이 없습니다.' });
     if (!languages.length) return res.status(400).json({ error: '번역 언어를 하나 이상 선택해 주세요.' });
     // TASK CS-v1.7 — was `> 10`, hardcoded back when the client always sent
@@ -476,7 +541,7 @@ router.post('/translate', async (req, res, next) => {
     // a cached language costs no output tokens, so only the ones we'd
     // actually send to Gemini should count against that budget. This also
     // means a fully-cached request never even builds a Gemini client.
-    const { hit: cachedResults, miss: languagesToFetch } = getCachedTranslations({ model: MODEL, title, description, languages });
+    const { hit: cachedResults, miss: languagesToFetch } = getCachedTranslations({ model: MODEL, title, description, languages, scope });
 
     if (languagesToFetch.length > 0) {
       // TASK CS-v1.8 — was count-only. tools/yt/app.js's estimateBatchSize()
@@ -485,10 +550,11 @@ router.post('/translate', async (req, res, next) => {
       // past maxOutputTokens: 16384, getting silently cut off. Reject before
       // spending the call, and hand back the batch size we'd actually
       // accept so the caller can re-split and retry.
-      const recommendedBatchSize = estimateMaxBatchSize(description);
+      const recommendedBatchSize = estimateMaxBatchSize(scope, title, description);
       if (languagesToFetch.length > recommendedBatchSize) {
+        const basisLabel = scope === 'title' ? `제목 길이(${Array.from(title).length}자)` : `설명 길이(${Array.from(description).length}자)`;
         return res.status(400).json({
-          error: `설명 길이(${Array.from(description).length}자) 기준으로 한 번에 최대 ${recommendedBatchSize}개 언어까지 처리할 수 있습니다(캐시에 없는 ${languagesToFetch.length}개 기준). 더 작은 묶음으로 나눠 보내 주세요.`,
+          error: `${basisLabel} 기준으로 한 번에 최대 ${recommendedBatchSize}개 언어까지 처리할 수 있습니다(캐시에 없는 ${languagesToFetch.length}개 기준). 더 작은 묶음으로 나눠 보내 주세요.`,
           recommendedBatchSize,
         });
       }
@@ -502,8 +568,10 @@ router.post('/translate', async (req, res, next) => {
       let response;
       try {
         const ai = requireGeminiClient('paid');
-        const prompt = buildTranslatePrompt(title, description, languagesToFetch);
-        response = await generateTranslation(ai, prompt);
+        const prompt = scope === 'title'
+          ? buildTranslatePromptTitleOnly(title, languagesToFetch)
+          : buildTranslatePromptFull(title, description, languagesToFetch);
+        response = await generateTranslation(ai, prompt, scope);
       } catch (geminiError) {
         // TASK CS-v2.0 작업 A 요구사항 1 — 429는 요청 전체를 그냥 끝내지
         // 않는다. requireGeminiClient가 던지는 일일 상한(dailyLimitReached)과
@@ -528,6 +596,7 @@ router.post('/translate', async (req, res, next) => {
             paidKeyConfigured: hasPaidKey(),
             results: partialResults,
             fromCache: cachedResults.map((result) => result.language),
+            scope, // TASK CS-v2.1 작업 A 요구사항 4 — 실패 응답에도 실제 적용된 scope를 담는다
           });
         }
         throw geminiError;
@@ -592,7 +661,7 @@ router.post('/translate', async (req, res, next) => {
       // batch included, so the languages that DID complete never cost a
       // second call just because one language in the same batch got cut off.
       if (fetchedResults.length) {
-        setCachedTranslations({ model: MODEL, title, description, results: fetchedResults });
+        setCachedTranslations({ model: MODEL, title, description, results: fetchedResults, scope });
       }
     }
 
@@ -607,6 +676,7 @@ router.post('/translate', async (req, res, next) => {
       truncated,
       missingLanguages,
       fromCache: cachedResults.map((result) => result.language),
+      scope, // TASK CS-v2.1 작업 A 요구사항 4 — 요청값과 다를 수 있으므로(향후 검증 실패 등) 실제 적용값을 응답에 담는다
     });
   } catch (error) {
     next(error);
