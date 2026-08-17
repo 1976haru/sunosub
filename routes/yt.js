@@ -28,6 +28,44 @@ import { fetchSupportedLanguages, planLocalizations } from '../lib/ytLanguages.j
 const router = Router();
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 
+/*
+ * TASK CS-v2.2 작업 A — 화면에서 모델을 고를 수 있게 되면서 `model`이
+ * 더 이상 서버 상수 하나가 아니라 요청마다 다른 사용자 입력 문자열이
+ * 된다. CLAUDE.md 4.2대로 서버가 재검증한다: 영숫자·하이픈·마침표만
+ * 허용하고 길이를 제한한다. 슬래시를 아예 막으므로 "../" 같은 경로
+ * 탈출 문자가 들어갈 방법이 없다 — 이 값은 그대로 SDK가 구글 API URL에
+ * "models/{model}:generateContent" 형태로 꽂아 넣는다(models.list()
+ * 응답의 name 필드가 실제로 이 형식이라는 걸 확인함).
+ *
+ * 폴백 순서(요구사항 1): 요청값 -> process.env.GEMINI_MODEL -> 기본값.
+ * 빈 값/미지정은 폴백이고, 형식이 잘못된 값은 폴백하지 않고 400으로
+ * 거부한다 — 조용히 다른 모델로 바뀌면 사용자가 고른 것과 다른 모델로
+ * 돈이 나갈 수 있다(요구사항 B.3과 같은 원칙).
+ */
+const MODEL_NAME_PATTERN = /^[A-Za-z0-9.-]{1,64}$/;
+
+function resolveModel(requestedModel) {
+  const trimmed = String(requestedModel || '').trim();
+  if (!trimmed) return MODEL;
+  if (!MODEL_NAME_PATTERN.test(trimmed)) {
+    const error = new Error(`모델 이름이 올바르지 않습니다: "${trimmed.slice(0, 80)}". 영숫자·하이픈·마침표만 64자 이내로 입력해 주세요.`);
+    error.status = 400;
+    throw error;
+  }
+  return trimmed;
+}
+
+/*
+ * TASK CS-v2.2 — "이 모델이 thinkingConfig/결합 tools를 지원하는가"는
+ * 계정이 아니라 모델별 속성이다(생성형 CS-v1.7/CS-v1.8 시점엔 모델이
+ * 하나뿐이라 프로세스 전역 플래그 하나로 충분했다). 이제 요청마다 모델이
+ * 달라질 수 있으므로 모델별로 따로 기억해야 한다 — 안 그러면 A 모델에서
+ * 배운 "이 계정은 thinkingConfig를 거부한다"는 결론이 B 모델에도 잘못
+ * 적용돼 조용히 최적화가 빠진다(정확성 버그는 아니지만 불필요한 비용).
+ */
+const skipThinkingConfigByModel = new Map();
+const extractToolsModeByModel = new Map(); // model -> true(결합 tools 지원)/false(미지원)/undefined(아직 모름)
+
 function cleanEnv(value = '') {
   const text = String(value).trim();
   if (!text || text.includes('여기에_')) return '';
@@ -80,16 +118,7 @@ async function extractWithYouTubeApi(videoId) {
   };
 }
 
-/*
- * TASK CS-v1.7 — whether this account/model accepts urlContext+googleSearch
- * together is fixed for the life of the process (it's an account/model
- * property, not a per-request fluke), so remember the answer here instead
- * of re-probing on every call: null = not yet known, true = combined tools
- * work, false = this account/model rejects the combined form.
- */
-let extractToolsMode = null;
-
-async function extractWithGemini(url) {
+async function extractWithGemini(url, model = MODEL) {
   const ai = requireGeminiClient();
   const prompt = `You are extracting public metadata from one YouTube video page.
 Return the exact original video title and the full original description as shown by the uploader.
@@ -109,7 +138,7 @@ YouTube URL: ${url}`;
   };
 
   const callGemini = (useCombinedTools) => ai.models.generateContent({
-    model: MODEL,
+    model,
     contents: prompt,
     config: {
       tools: useCombinedTools ? [{ urlContext: {} }, { googleSearch: {} }] : [{ googleSearch: {} }],
@@ -119,10 +148,10 @@ YouTube URL: ${url}`;
   });
 
   const response = await withRetry(async () => {
-    const useCombinedTools = extractToolsMode !== false;
+    const useCombinedTools = extractToolsModeByModel.get(model) !== false;
     try {
       const result = await callGemini(useCombinedTools);
-      if (useCombinedTools) extractToolsMode = true;
+      if (useCombinedTools) extractToolsModeByModel.set(model, true);
       return result;
     } catch (error) {
       // TASK CS-v1.7 — a 429/5xx here means we're rate-limited or Google is
@@ -132,7 +161,7 @@ YouTube URL: ${url}`;
       // the moment we'd already hit the limit.
       if (isRateLimitError(error) || isServerError(error)) throw error;
       if (!useCombinedTools) throw error; // already on the fallback form — nothing left to try
-      extractToolsMode = false;
+      extractToolsModeByModel.set(model, false);
       return callGemini(false);
     }
   }, { label: 'yt/extract' });
@@ -147,6 +176,7 @@ YouTube URL: ${url}`;
     descriptionIncomplete: Boolean(parsed.descriptionIncomplete),
     publishedAt: '',
     source: 'Gemini URL/검색 추출',
+    model, // TASK CS-v2.2 작업 A 요구사항 3 — 실제로 이 추출에 쓰인 모델
   };
 }
 
@@ -267,11 +297,10 @@ const TRANSLATE_RESPONSE_SCHEMA_TITLE_ONLY = {
  * its tokens don't eat into maxOutputTokens on a plain translation, but not
  * every model/account combo recognizes the field: those reject it with a
  * 400 mentioning "thinking". That support is fixed for the life of this
- * process (same model, same account), so remember it in a module-scope flag
- * instead of re-discovering it on every call.
+ * process for a given model (see skipThinkingConfigByModel's TASK CS-v2.2
+ * comment near the top of this file for why it's now keyed by model), so
+ * remember it instead of re-discovering it on every call.
  */
-let skipThinkingConfig = false;
-
 function isThinkingUnsupportedError(error) {
   const status = Number(error?.status || error?.code || 0);
   if (status !== 400) return false;
@@ -419,31 +448,32 @@ ${title}`;
  * here would multiply, not just add once.
  *
  * generateWithOptionalThinking() is shared by generateTranslation() and
- * /regenerate below — both hit the same paid model/account, so "does this
- * account accept thinkingConfig" (skipThinkingConfig) only needs discovering
- * once, not once per endpoint. Measured directly: /regenerate without any
- * config at all (i.e. what it looked like before this task) spent 904
- * thoughtsTokenCount to produce a 17-token title rewrite — thinking was
- * silently the majority of every regenerate call's cost.
+ * /regenerate below — both hit the same paid account, so "does this
+ * model accept thinkingConfig" (skipThinkingConfigByModel) only needs
+ * discovering once per model, not once per endpoint. Measured directly:
+ * /regenerate without any config at all (i.e. what it looked like before
+ * this task) spent 904 thoughtsTokenCount to produce a 17-token title
+ * rewrite — thinking was silently the majority of every regenerate call's
+ * cost.
  */
-async function generateWithOptionalThinking(ai, { contents, config }, { label, context }) {
+async function generateWithOptionalThinking(ai, { contents, config }, { label, context, model = MODEL }) {
   const call = (includeThinking) => ai.models.generateContent({
-    model: MODEL,
+    model,
     contents,
     config: { ...config, ...(includeThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
   });
   try {
-    return await withRetry(() => call(!skipThinkingConfig), { label, tier: 'paid', context });
+    return await withRetry(() => call(skipThinkingConfigByModel.get(model) !== true), { label, tier: 'paid', context });
   } catch (error) {
-    if (!skipThinkingConfig && isThinkingUnsupportedError(error)) {
-      skipThinkingConfig = true;
+    if (skipThinkingConfigByModel.get(model) !== true && isThinkingUnsupportedError(error)) {
+      skipThinkingConfigByModel.set(model, true);
       return withRetry(() => call(false), { label, tier: 'paid', context });
     }
     throw error;
   }
 }
 
-async function generateTranslation(ai, prompt, scope, languageCount) {
+async function generateTranslation(ai, prompt, scope, languageCount, model = MODEL) {
   // TASK CS-v1.8 — translate is one of the two paid-tier call sites (see
   // lib/keyStore.js's currentKey('paid')); everything else in this file
   // stays on the free tier.
@@ -456,8 +486,58 @@ async function generateTranslation(ai, prompt, scope, languageCount) {
   return generateWithOptionalThinking(ai, {
     contents: prompt,
     config: { responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 16384 },
-  }, { label: 'yt/translate', context: { scope, languageCount } }); // TASK 후속 — .gemini_errors.log에 실릴 필드
+  }, { label: 'yt/translate', context: { scope, languageCount }, model }); // TASK 후속 — .gemini_errors.log에 실릴 필드
 }
+
+/*
+ * TASK CS-v2.2 작업 B — 실측(2026-08-17, 실제 계정으로 ai.models.list() 직접
+ * 호출): supportedActions에 "generateContent"가 있다고 텍스트 모델인
+ * 것은 아니다. TTS 모델(gemini-2.5-flash-preview-tts 등)도 generateContent를
+ * 지원한다고 나온다 — 추측이 아니라 실제 응답을 보고 확인한 사실이다.
+ * 그래서 supportedActions 확인(임베딩·비디오·라이브 계열 제거)에 더해
+ * 이름 패턴으로 TTS·이미지 생성 계열을 추가로 걸러낸다. 지시서가 명시한
+ * 4개 계열(임베딩·이미지·TTS·비디오)만 제외하고, lyria(음악 생성)처럼
+ * 지시서에 없는 계열은 임의로 더 빼지 않는다 — 목록을 부풀리는 쪽이,
+ * 실제로 쓸 수 있는 걸 조용히 숨기는 쪽보다 안전하다(요구사항 B.3의
+ * "조용히 갈아타지 말 것"과 같은 원칙).
+ */
+const MODEL_LIST_EXCLUDE_PATTERN = /embed|image|tts|veo|video/i;
+
+// TASK CS-v2.2 — 이름만으로는 안 걸러진 실제 사례: "nano-banana-pro-preview"는
+// 이름에 image/tts 등 키워드가 전혀 없지만 description이 "Gemini 3 Pro Image
+// Preview"라 실제로는 이미지 생성 모델이다(실측 확인). name과 description을
+// 같이 검사해야 이런 코드네임 모델도 걸러진다.
+function isTextGenerationModel(model) {
+  const actions = Array.isArray(model?.supportedActions) ? model.supportedActions : [];
+  if (!actions.includes('generateContent')) return false;
+  const haystack = `${model?.name || ''} ${model?.description || ''}`;
+  return !MODEL_LIST_EXCLUDE_PATTERN.test(haystack);
+}
+
+/** 요구사항 B.1/B.3 공용 — 정상 목록 조회와 404 에러 응답에 실릴 "사용 가능한 모델" 둘 다 이 함수를 쓴다. */
+async function listTextModels() {
+  const ai = requireGeminiClient('paid'); // TASK CS-v2.2 — /translate·/regenerate가 실제로 과금되는 슬롯과 동일하게 조회한다
+  const pager = await withRetry(() => ai.models.list({ config: { pageSize: 200 } }), { label: 'yt/list-models', tier: 'paid' });
+  const items = [];
+  for await (const item of pager) items.push(item);
+  return items
+    .filter(isTextGenerationModel)
+    .map((item) => ({
+      name: String(item.name || '').replace(/^models\//, ''),
+      displayName: item.displayName || '',
+      description: item.description || '',
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+router.get('/models', async (req, res, next) => {
+  try {
+    const models = await listTextModels();
+    res.json({ models, defaultModel: MODEL });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/status', (req, res) => {
   const hasGemini = Boolean(currentKey());
@@ -488,6 +568,7 @@ router.post('/extract', async (req, res, next) => {
     if (!videoId) return res.status(400).json({ error: '올바른 YouTube URL 또는 11자리 비디오 ID를 입력해 주세요.' });
     const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const hasGemini = Boolean(currentKey());
+    const model = resolveModel(req.body?.model); // TASK CS-v2.2 작업 A
 
     let result;
     let apiError = '';
@@ -519,7 +600,7 @@ router.post('/extract', async (req, res, next) => {
           result = keylessResult;
         } else {
           try {
-            result = await extractWithGemini(canonicalUrl);
+            result = await extractWithGemini(canonicalUrl, model);
           } catch (geminiError) {
             const fallback = await fallbackOEmbed(canonicalUrl).catch(() => null);
             if (!fallback) throw geminiError;
@@ -580,6 +661,7 @@ router.post('/translate', async (req, res, next) => {
     // CLAUDE.md의 "조용한 오동작보다 안전한 기본값" 관행(예: social-studio의
     // VALID_MODES 기본값 'local')과 같은 이유다.
     const scope = req.body?.scope === 'full' ? 'full' : 'title';
+    const model = resolveModel(req.body?.model); // TASK CS-v2.2 작업 A — 400이면 여기서 바로 throw됨
     if (!title) return res.status(400).json({ error: '번역할 제목이 없습니다.' });
     if (!languages.length) return res.status(400).json({ error: '번역 언어를 하나 이상 선택해 주세요.' });
     // TASK CS-v1.7 — was `> 10`, hardcoded back when the client always sent
@@ -594,7 +676,7 @@ router.post('/translate', async (req, res, next) => {
     // a cached language costs no output tokens, so only the ones we'd
     // actually send to Gemini should count against that budget. This also
     // means a fully-cached request never even builds a Gemini client.
-    const { hit: cachedResults, miss: languagesToFetch } = getCachedTranslations({ model: MODEL, title, description, languages, scope });
+    const { hit: cachedResults, miss: languagesToFetch } = getCachedTranslations({ model, title, description, languages, scope });
 
     if (languagesToFetch.length > 0) {
       // TASK CS-v1.8 — was count-only. tools/yt/app.js's estimateBatchSize()
@@ -625,7 +707,7 @@ router.post('/translate', async (req, res, next) => {
         const prompt = scope === 'title'
           ? buildTranslatePromptTitleOnly(title, languagesToFetch)
           : buildTranslatePromptFull(title, description, languagesToFetch);
-        response = await generateTranslation(ai, prompt, scope, languagesToFetch.length);
+        response = await generateTranslation(ai, prompt, scope, languagesToFetch.length, model);
       } catch (geminiError) {
         // TASK CS-v2.0 작업 A 요구사항 1 — 429는 요청 전체를 그냥 끝내지
         // 않는다. requireGeminiClient가 던지는 일일 상한(dailyLimitReached)과
@@ -651,6 +733,22 @@ router.post('/translate', async (req, res, next) => {
             results: partialResults,
             fromCache: cachedResults.map((result) => result.language),
             scope, // TASK CS-v2.1 작업 A 요구사항 4 — 실패 응답에도 실제 적용된 scope를 담는다
+          });
+        }
+        // TASK CS-v2.2 작업 B 요구사항 3 — 모델이 없거나(오타) 은퇴됐으면
+        // Gemini가 404를 준다(실측 확인: error.status===404, 메시지가
+        // "... is not found ... Call ModelService.ListModels ..."). 여기서
+        // 조용히 다른 모델로 갈아타지 않는다 — 사용자가 고른 모델과 다른
+        // 것으로 돈이 나가면 안 된다는 게 지시서의 명시적 요구사항이다.
+        // 대신 실제 사용 가능한 목록을 같이 돌려줘 화면이 바로 골라 쓰게 한다.
+        if (Number(geminiError?.status) === 404) {
+          let availableModels = [];
+          try { availableModels = await listTextModels(); } catch { /* 목록 조회 자체가 실패해도 404 사실은 그대로 알린다 */ }
+          return res.status(404).json({
+            error: `모델 "${model}"을(를) 사용할 수 없습니다. 목록에서 다른 모델을 선택해 주세요.`,
+            modelNotFound: true,
+            requestedModel: model,
+            availableModels,
           });
         }
         throw geminiError;
@@ -727,7 +825,7 @@ router.post('/translate', async (req, res, next) => {
           const retryPrompt = scope === 'title'
             ? buildTranslatePromptTitleOnly(title, retryLanguages, retryLengths)
             : buildTranslatePromptFull(title, description, retryLanguages, retryLengths);
-          retryResponse = await generateTranslation(retryAi, retryPrompt, scope, retryLanguages.length);
+          retryResponse = await generateTranslation(retryAi, retryPrompt, scope, retryLanguages.length, model);
         } catch {
           // 429/서버 오류 등 — 재시도를 그만두고 남은 언어는 그대로 초과
           // 목록에 남긴다. 원래 있던 primary 결과는 이미 fetchedResults에
@@ -828,7 +926,7 @@ router.post('/translate', async (req, res, next) => {
       // batch included, so the languages that DID complete never cost a
       // second call just because one language in the same batch got cut off.
       if (fetchedResults.length) {
-        setCachedTranslations({ model: MODEL, title, description, results: fetchedResults, scope });
+        setCachedTranslations({ model, title, description, results: fetchedResults, scope });
       }
     }
 
@@ -839,7 +937,7 @@ router.post('/translate', async (req, res, next) => {
 
     res.json({
       results,
-      model: MODEL,
+      model, // TASK CS-v2.2 작업 A 요구사항 3 — 요청값이 아니라 서버가 실제로 적용한 값(폴백 포함)
       truncated,
       missingLanguages,
       oversizedTitles, // TASK 후속(재조사) — [{language, length}], 100자 초과로 제외된 언어와 실제 길이. 화면이 "○○ N자 → 100자 초과" 로 보여줄 수 있게.
@@ -863,6 +961,7 @@ router.post('/regenerate', async (req, res, next) => {
     const description = String(req.body?.description || '');
     const language = String(req.body?.language || '').trim();
     const field = req.body?.field === 'description' ? 'description' : 'title';
+    const model = resolveModel(req.body?.model); // TASK CS-v2.2 작업 A
     if (!language) return res.status(400).json({ error: '대상 언어가 없습니다.' });
     const ai = requireGeminiClient('paid'); // TASK CS-v1.8 — the other paid-tier call site, alongside /translate
 
@@ -870,18 +969,35 @@ router.post('/regenerate', async (req, res, next) => {
       ? `Translate and rewrite this YouTube title naturally in ${language}. Maximum 100 Unicode characters. Preserve [playlist] and emojis. Return only the title, with no quotes or explanation.\n\nOriginal title:\n${title}`
       : `Translate and rewrite this YouTube description naturally in ${language}. Translate normal hashtags, preserve emojis, URLs, timestamps, and track-list song-title lines exactly. Return only the description, with no explanation.\n\nOriginal description:\n${description}`;
 
-    // TASK CS-v1.8 — this used to call generateContent with no config at
-    // all, which meant no thinkingConfig either; measured that costing ~53x
-    // the actual output in thinking tokens (see generateWithOptionalThinking's
-    // doc comment above). maxOutputTokens: 4096 is generous for a single
-    // title/description rewrite while still bounding the worst case.
-    const response = await generateWithOptionalThinking(ai, {
-      contents: prompt,
-      config: { maxOutputTokens: 4096 },
-    }, { label: 'yt/regenerate' });
+    let response;
+    try {
+      // TASK CS-v1.8 — this used to call generateContent with no config at
+      // all, which meant no thinkingConfig either; measured that costing ~53x
+      // the actual output in thinking tokens (see generateWithOptionalThinking's
+      // doc comment above). maxOutputTokens: 4096 is generous for a single
+      // title/description rewrite while still bounding the worst case.
+      response = await generateWithOptionalThinking(ai, {
+        contents: prompt,
+        config: { maxOutputTokens: 4096 },
+      }, { label: 'yt/regenerate', model });
+    } catch (geminiError) {
+      // TASK CS-v2.2 작업 B 요구사항 3 — /translate와 같은 원칙: 404면
+      // 조용히 다른 모델로 갈아타지 않고 사용 가능한 목록과 함께 알린다.
+      if (Number(geminiError?.status) === 404) {
+        let availableModels = [];
+        try { availableModels = await listTextModels(); } catch { /* 목록 조회 실패해도 404 사실은 그대로 알린다 */ }
+        return res.status(404).json({
+          error: `모델 "${model}"을(를) 사용할 수 없습니다. 목록에서 다른 모델을 선택해 주세요.`,
+          modelNotFound: true,
+          requestedModel: model,
+          availableModels,
+        });
+      }
+      throw geminiError;
+    }
     const text = String(response.text || '').trim();
     if (!text) throw new Error('재생성 결과가 비어 있습니다.');
-    res.json({ text: field === 'title' ? text.slice(0, 100) : text });
+    res.json({ text: field === 'title' ? text.slice(0, 100) : text, model });
   } catch (error) {
     next(error);
   }
