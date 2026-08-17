@@ -29,6 +29,9 @@ const state = {
   sourceMeta: null,
   translating: false,
   geminiConfigured: false,
+  // TASK CS-v2.1 작업 C — 설명까지 번역할 언어. state.selected의 부분집합
+  // (그 안에서만 의미가 있다). 기본값은 비어있음 = 전 언어 제목만.
+  descriptionScope: new Set(),
   // TASK CS-v1.8 follow-up — drives the confirm-box/regenerate-button
   // wording: "비용이 발생합니다" only makes sense when a paid key is
   // actually configured. Set from /api/yt/status in loadStatus().
@@ -180,14 +183,76 @@ function renderLanguages(filter = '') {
       else state.selected.delete(input.value);
       updateSelectedCount();
       updateContinueButton();
+      pruneDescriptionScope();
+      renderDescScopeGrid();
     });
   });
   updateSelectedCount();
   updateContinueButton();
+  pruneDescriptionScope();
+  renderDescScopeGrid();
 }
 
 function updateSelectedCount() {
   $('selectedCount').textContent = `${state.selected.size}개 선택`;
+}
+
+/*
+ * TASK CS-v2.1 작업 C 요구사항 1+2 — 설명까지 번역할 언어를 고르는 영역.
+ * state.selected(메인 선택)의 부분집합만 보여준다 — 번역 대상이 아닌
+ * 언어를 설명 대상으로 고르는 건 의미가 없다. CORE_LANGUAGES 프리셋을
+ * 재사용한다(요구사항 2).
+ */
+function renderDescScopeGrid() {
+  const selectedList = currentSelectedLanguages();
+  const grid = $('descScopeGrid');
+  if (!selectedList.length) {
+    grid.innerHTML = '<p class="hint">먼저 위에서 번역할 언어를 선택하세요.</p>';
+  } else {
+    grid.innerHTML = selectedList.map(lang => `
+      <label class="language-item">
+        <input type="checkbox" value="${escapeHtml(lang)}" ${state.descriptionScope.has(lang) ? 'checked' : ''} />
+        <span>${escapeHtml(lang)}</span>
+      </label>`).join('');
+    grid.querySelectorAll('input').forEach(input => {
+      input.addEventListener('change', () => {
+        if (input.checked) state.descriptionScope.add(input.value);
+        else state.descriptionScope.delete(input.value);
+        updateDescScopeCount();
+        updateCostEstimate();
+        saveLocal();
+      });
+    });
+  }
+  updateDescScopeCount();
+  updateCostEstimate();
+}
+
+function updateDescScopeCount() {
+  $('descScopeCount').textContent = `${state.descriptionScope.size}개 선택`;
+}
+
+/*
+ * TASK CS-v2.1 작업 C 요구사항 4 — 선택할 때마다 예상 호출 수를 갱신한다.
+ * 캐시 히트는 감안하지 않은 상한 추정치다(추정이라고 명시적으로 표기) —
+ * 금액은 절대 표시하지 않는다(단가는 변동되고, 추정값을 코드에 박지
+ * 않는다는 geminiConfig.json 원칙과 같은 이유).
+ */
+function updateCostEstimate() {
+  const el = $('costEstimate');
+  if (!el) return;
+  const selected = currentSelectedLanguages();
+  const { full, titleOnly } = splitByDescriptionScope(selected);
+  const title = $('sourceTitle').value.trim();
+  const description = $('sourceDescription').value;
+  const callsFor = (scope, list) => {
+    if (!list.length) return 0;
+    return Math.ceil(list.length / estimateBatchSize(scope, title, description, list.length));
+  };
+  const totalCalls = callsFor('title', titleOnly) + callsFor('full', full);
+  el.textContent = selected.length
+    ? `제목만 ${titleOnly.length}개 + 설명 ${full.length}개 → 예상 호출 ${totalCalls}회 (캐시 히트 제외한 상한 추정치)`
+    : '';
 }
 
 function setSourceMeta(data) {
@@ -249,9 +314,12 @@ function chunk(array, size) {
  */
 const TRANSLATE_TOKEN_BUDGET = 12000;
 
-function estimateBatchSize(description, totalSelected) {
-  const descLength = Array.from(description || '').length;
-  const perLanguageTokens = (descLength + 100) / 2;
+// TASK CS-v2.1 작업 A 요구사항 3 — scope:'title'이면 언어당 출력량을
+// description이 아니라 title 길이로 추정한다. routes/yt.js의
+// estimateMaxBatchSize()와 반드시 같은 공식을 유지할 것(CLAUDE.md 3.3).
+function estimateBatchSize(scope, title, description, totalSelected) {
+  const baseLength = Array.from((scope === 'title' ? title : description) || '').length;
+  const perLanguageTokens = (baseLength + 100) / 2;
   const size = Math.floor(TRANSLATE_TOKEN_BUDGET / perLanguageTokens);
   return Math.max(1, Math.min(totalSelected, size));
 }
@@ -272,12 +340,32 @@ function pendingLanguages(selectedList) {
   return selectedList.filter(lang => !hasResultFor(lang));
 }
 
-function upsertResults(newResults) {
+// TASK CS-v2.1 작업 C — 실제 적용된 scope를 결과에 함께 저장한다(요구사항 4의
+// 화면 반영). scope는 배치(호출) 단위 응답값이라 그 배치의 모든 결과에 같이 붙인다.
+function upsertResults(newResults, scope) {
   for (const result of newResults) {
+    const withScope = scope ? { ...result, scope } : result;
     const index = state.results.findIndex(r => r.language === result.language);
-    if (index >= 0) state.results[index] = result;
-    else state.results.push(result);
+    if (index >= 0) state.results[index] = withScope;
+    else state.results.push(withScope);
   }
+}
+
+/*
+ * TASK CS-v2.1 작업 C — 설명 대상 언어는 state.selected의 부분집합으로만
+ * 의미가 있다. 메인 선택이 줄어들면(체크 해제) 같이 정리해, 이미 선택
+ * 해제한 언어가 설명 대상에는 남아 예상 표시가 어긋나는 일을 막는다.
+ */
+function pruneDescriptionScope() {
+  for (const lang of [...state.descriptionScope]) {
+    if (!state.selected.has(lang)) state.descriptionScope.delete(lang);
+  }
+}
+
+function splitByDescriptionScope(languages) {
+  const full = languages.filter(lang => state.descriptionScope.has(lang));
+  const titleOnly = languages.filter(lang => !state.descriptionScope.has(lang));
+  return { full, titleOnly };
 }
 
 function currentSelectedLanguages() {
@@ -296,13 +384,48 @@ function updateContinueButton() {
   btn.textContent = `이어서 번역 (${pending.length}개 남음)`;
 }
 
+/**
+ * TASK CS-v2.1 작업 C 요구사항 3 — 처리할 언어를 설명 대상(scope:'full')과
+ * 나머지(scope:'title')로 나눠 별도 요청으로 보낸다. 두 그룹은 각자 자기
+ * scope에 맞는 묶음 크기로 나뉜다(estimateBatchSize). state.translating과
+ * 버튼 상태는 이 함수가 그룹 전체에 걸쳐 한 번만 관리한다 — 그룹 사이에
+ * 버튼이 깜빡이며 잠깐 풀리는 걸 막기 위해.
+ */
+async function runOneScopeGroup(languages, scope, { forcePaid }) {
+  const title = $('sourceTitle').value.trim();
+  const description = $('sourceDescription').value;
+  const scopeLabel = scope === 'full' ? '제목+설명' : '제목만';
+  const batchSize = estimateBatchSize(scope, title, description, languages.length);
+  const batches = chunk(languages, batchSize);
+  let cacheHitCount = 0;
+  const missing = [];
+  let processed = 0;
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    processed += batch.length;
+    $('progressText').textContent = `[${scopeLabel}] ${languages.length}개 언어 중 ${processed}개 처리 중 · 묶음 ${i + 1}/${batches.length}`;
+    const data = await api('/api/yt/translate', {
+      method: 'POST',
+      body: JSON.stringify({ title, description, languages: batch, scope, ...(forcePaid ? { forcePaid: true } : {}) }),
+    });
+    cacheHitCount += data.fromCache?.length || 0;
+    if (data.missingLanguages?.length) missing.push(...data.missingLanguages);
+    upsertResults(data.results, data.scope || scope);
+    renderResults();
+    saveLocal();
+    // TASK CS-v1.7 — no client-side sleep here anymore; lib/gemini.js's
+    // process-wide queue paces every call (including these), and pacing
+    // it from two places would just have them fight each other.
+  }
+  return { cacheHitCount, missing };
+}
+
 /** Shared by both the "번역" and "이어서 번역" buttons — only which languages get sent, and whether prior results are wiped first, differs. */
-async function runTranslateBatches(languagesToProcess, { resetResults, forcePaid = false }) {
+async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid = false }) {
   if (state.translating || !state.geminiConfigured) return;
   hideTranslateConfirm();
   hideQuotaChoice();
   const title = $('sourceTitle').value.trim();
-  const description = $('sourceDescription').value;
   if (!title) return setError('translateError', '원문 제목을 입력해 주세요.');
   if (!languagesToProcess.length) return setError('translateError', '번역할 언어가 없습니다.');
   setError('translateError');
@@ -317,35 +440,24 @@ async function runTranslateBatches(languagesToProcess, { resetResults, forcePaid
   $('continueTranslateBtn').disabled = true;
   $('translateBtn').textContent = '번역 중…';
   $('progressWrap').classList.remove('hidden');
+  $('progressBar').style.width = '0%';
 
-  const batchSize = estimateBatchSize(description, languagesToProcess.length);
-  const batches = chunk(languagesToProcess, batchSize);
-  let cacheHitCount = 0;
+  const { full, titleOnly } = splitByDescriptionScope(languagesToProcess);
+  const groups = [];
+  if (titleOnly.length) groups.push({ scope: 'title', languages: titleOnly });
+  if (full.length) groups.push({ scope: 'full', languages: full });
+
+  let cacheHitTotal = 0;
   let missingTotal = [];
+  let quotaError = null;
   try {
-    let processed = 0;
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      processed += batch.length;
-      $('progressText').textContent = `${languagesToProcess.length}개 언어 중 ${processed}개 처리 중 · 묶음 ${i + 1}/${batches.length}`;
-      $('progressBar').style.width = `${Math.round((i / batches.length) * 100)}%`;
-      const data = await api('/api/yt/translate', {
-        method: 'POST',
-        body: JSON.stringify({ title, description, languages: batch, ...(forcePaid ? { forcePaid: true } : {}) }),
-      });
-      cacheHitCount += data.fromCache?.length || 0;
-      if (data.missingLanguages?.length) missingTotal.push(...data.missingLanguages);
-      upsertResults(data.results);
-      renderResults();
-      saveLocal();
-      // TASK CS-v1.7 — no client-side sleep here anymore; lib/gemini.js's
-      // process-wide queue paces every call (including these), and pacing
-      // it from two places would just have them fight each other.
+    for (let g = 0; g < groups.length; g++) {
+      const { cacheHitCount, missing } = await runOneScopeGroup(groups[g].languages, groups[g].scope, { forcePaid });
+      cacheHitTotal += cacheHitCount;
+      missingTotal.push(...missing);
+      $('progressBar').style.width = `${Math.round(((g + 1) / groups.length) * 100)}%`;
     }
-    $('progressBar').style.width = '100%';
-    // TASK CS-v1.8 — "N개는 캐시에서 불러왔습니다": cached languages cost no
-    // API call, so surfacing the count is what makes that savings visible.
-    const cacheNote = cacheHitCount ? ` (캐시에서 ${cacheHitCount}개 불러옴)` : '';
+    const cacheNote = cacheHitTotal ? ` (캐시에서 ${cacheHitTotal}개 불러옴)` : '';
     $('progressText').textContent = `${languagesToProcess.length}개 언어 처리 완료${cacheNote}`;
     showToast(missingTotal.length
       ? `번역 완료. ${missingTotal.length}개 언어는 출력이 잘려 받지 못했습니다 — "이어서 번역"으로 다시 시도하세요.`
@@ -357,14 +469,18 @@ async function runTranslateBatches(languagesToProcess, { resetResults, forcePaid
     // 실패한 배치 안에서도 캐시로 이미 맞춘 언어들이므로 먼저 반영한다 —
     // 그렇지 않으면 이 배치의 캐시 히트가 화면에서 사라진다.
     if (error.quotaExhausted) {
-      upsertResults(error.results || []);
+      quotaError = error;
+      upsertResults(error.results || [], error.scope);
       renderResults();
       saveLocal();
       setError('translateError');
-      showQuotaChoice(pendingLanguages(languagesToProcess), error);
+      // TASK CS-v2.1 — 두 그룹 중 하나가 429로 막히면 나머지 그룹(예: 아직
+      // 시도 안 한 설명-대상 그룹)도 이어서 부르지 않는다 — 남은 전체를
+      // pendingLanguages로 다시 계산해 선택지에 보여준다.
+      showQuotaChoice(pendingLanguages(languagesToProcess), quotaError);
     } else {
       const remaining = pendingLanguages(languagesToProcess).length;
-      setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. 다음 묶음에서 오류가 발생했습니다: ${error.message}`);
+      setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. 처리 중 오류가 발생했습니다: ${error.message}`);
     }
   } finally {
     state.translating = false;
@@ -459,13 +575,13 @@ async function onTranslateClick() {
     showTranslateConfirm(alreadyDone.length, selected);
     return;
   }
-  await runTranslateBatches(selected, { resetResults: true });
+  await runScopedTranslate(selected, { resetResults: true });
 }
 
 async function onContinueTranslateClick() {
   const pending = pendingLanguages(currentSelectedLanguages());
   if (!pending.length) { showToast('이어서 번역할 언어가 없습니다.'); return; }
-  await runTranslateBatches(pending, { resetResults: false });
+  await runScopedTranslate(pending, { resetResults: false });
 }
 
 const REGEN_BUTTON_LABELS = { 'regen-title': '제목 재생성', 'regen-description': '설명 재생성' };
@@ -482,7 +598,10 @@ function renderResults() {
     return `
       <article class="result-card" data-index="${index}">
         <div class="result-title-row">
-          <h3>${escapeHtml(result.language)}</h3>
+          <div style="display:flex;align-items:center;gap:10px">
+            <h3>${escapeHtml(result.language)}</h3>
+            <span class="pill" title="이 언어에 실제로 적용된 번역 범위">${result.scope === 'full' ? '제목+설명' : '제목만'}</span>
+          </div>
           <div class="result-actions">
             <button class="mini-btn" data-action="copy-title">제목 복사</button>
             <button class="mini-btn" data-action="regen-title">제목 재생성</button>
@@ -615,7 +734,7 @@ function exportJson() {
   const payload = {
     source: { title: $('sourceTitle').value, description: $('sourceDescription').value, meta: state.sourceMeta },
     // _regenSourceKey is internal regenerate-confirm bookkeeping (CS-v1.8 task D) — not part of the exported data.
-    translations: state.results.map(({ language, translatedTitle, translatedDescription }) => ({ language, translatedTitle, translatedDescription })),
+    translations: state.results.map(({ language, translatedTitle, translatedDescription, scope }) => ({ language, translatedTitle, translatedDescription, scope })),
   };
   download(JSON.stringify(payload, null, 2), 'youtube_translations.json', 'application/json;charset=utf-8');
 }
@@ -631,6 +750,7 @@ function saveLocal() {
     title: $('sourceTitle')?.value || '',
     description: $('sourceDescription')?.value || '',
     selected: Array.from(state.selected),
+    descriptionScope: Array.from(state.descriptionScope),
     results: state.results,
     resultsSourceKey: state.resultsSourceKey,
     sourceMeta: state.sourceMeta,
@@ -646,6 +766,7 @@ function restoreLocal() {
     $('sourceTitle').value = payload.title || '';
     $('sourceDescription').value = payload.description || '';
     if (Array.isArray(payload.selected)) state.selected = new Set(payload.selected);
+    if (Array.isArray(payload.descriptionScope)) state.descriptionScope = new Set(payload.descriptionScope);
     if (Array.isArray(payload.results)) state.results = payload.results;
     // TASK CS-v1.8 — payload.resultsSourceKey is missing on state saved
     // before this field existed; title/description were saved in the same
@@ -670,8 +791,8 @@ function setupEvents() {
   });
   $('extractBtn').addEventListener('click', extractVideo);
   $('youtubeUrl').addEventListener('keydown', event => { if (event.key === 'Enter') extractVideo(); });
-  $('sourceTitle').addEventListener('input', () => { invalidateResultsIfSourceChanged(); updateTitleCount(); saveLocal(); });
-  $('sourceDescription').addEventListener('input', () => { invalidateResultsIfSourceChanged(); saveLocal(); });
+  $('sourceTitle').addEventListener('input', () => { invalidateResultsIfSourceChanged(); updateTitleCount(); updateCostEstimate(); saveLocal(); });
+  $('sourceDescription').addEventListener('input', () => { invalidateResultsIfSourceChanged(); updateCostEstimate(); saveLocal(); });
   document.querySelectorAll('[data-copy-target]').forEach(button => {
     button.addEventListener('click', () => copyText($(button.dataset.copyTarget).value));
   });
@@ -679,12 +800,25 @@ function setupEvents() {
   $('clearAllBtn').addEventListener('click', () => { state.selected.clear(); renderLanguages($('languageSearch').value); saveLocal(); });
   $('corePresetBtn').addEventListener('click', () => { state.selected = new Set(CORE_LANGUAGES); renderLanguages($('languageSearch').value); saveLocal(); });
   $('languageSearch').addEventListener('input', event => renderLanguages(event.target.value));
+  // TASK CS-v2.1 작업 C 요구사항 2 — CORE_LANGUAGES를 설명 대상 프리셋으로도
+  // 재사용. state.selected와의 교집합만 적용한다(번역 대상이 아닌 언어를
+  // 설명 대상으로 넣는 건 의미가 없다).
+  $('descCorePresetBtn').addEventListener('click', () => {
+    state.descriptionScope = new Set([...CORE_LANGUAGES].filter(lang => state.selected.has(lang)));
+    renderDescScopeGrid();
+    saveLocal();
+  });
+  $('descClearBtn').addEventListener('click', () => {
+    state.descriptionScope.clear();
+    renderDescScopeGrid();
+    saveLocal();
+  });
   $('translateBtn').addEventListener('click', onTranslateClick);
   $('continueTranslateBtn').addEventListener('click', onContinueTranslateClick);
   $('translateConfirmYesBtn').addEventListener('click', async () => {
     const selected = JSON.parse($('translateConfirm').dataset.pendingSelected || '[]');
     hideTranslateConfirm();
-    await runTranslateBatches(selected, { resetResults: true });
+    await runScopedTranslate(selected, { resetResults: true });
   });
   $('translateConfirmNoBtn').addEventListener('click', hideTranslateConfirm);
   // TASK CS-v2.0 작업 A — 남은 언어(quotaChoice에 저장해둔 목록)만 forcePaid로
@@ -692,7 +826,7 @@ function setupEvents() {
   $('quotaChoicePaidBtn').addEventListener('click', async () => {
     const pending = JSON.parse($('quotaChoice').dataset.pendingLanguages || '[]');
     hideQuotaChoice();
-    await runTranslateBatches(pending, { resetResults: false, forcePaid: true });
+    await runScopedTranslate(pending, { resetResults: false, forcePaid: true });
   });
   // TASK CS-v2.0 — 셸의 키 다이얼로그는 이 iframe과 다른 문서다
   // (public/index.html). CLAUDE.md 3.4대로 postMessage로 부모(셸)에 요청하고

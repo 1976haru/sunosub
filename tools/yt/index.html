@@ -74,6 +74,25 @@
         <input id="languageSearch" class="language-search" type="search" placeholder="언어 검색" />
       </div>
       <div id="languageGrid" class="language-grid"></div>
+
+      <!-- TASK CS-v2.1 작업 C — 설명까지 번역할 언어를 따로 고르는 영역.
+           기본값은 비어있음(= 전 언어 제목만 번역, 무료 한도로 충분). -->
+      <div class="section-head" style="margin-top:18px">
+        <div>
+          <p class="eyebrow">DESCRIPTION SCOPE</p>
+          <h2>설명까지 번역할 언어 (선택 사항)</h2>
+        </div>
+        <span id="descScopeCount" class="pill">0개 선택</span>
+      </div>
+      <p class="hint">기본은 전 언어 제목만 번역합니다 — 유튜브 노출은 주로 제목이 결정하고, 제목만 번역하면 무료 한도로 충분합니다.
+        주요 시청자층 언어만 골라 설명까지 번역하세요.</p>
+      <div class="toolbar">
+        <button id="descCorePresetBtn" class="btn secondary">핵심 10개 언어</button>
+        <button id="descClearBtn" class="btn secondary">선택 해제</button>
+      </div>
+      <div id="descScopeGrid" class="language-grid"></div>
+      <p id="costEstimate" class="hint"></p>
+
       <!-- TASK CS-v1.8 — inline confirm instead of window.confirm(): shown before re-running a selection that overlaps existing results. TASK CS-v1.8 follow-up — text/button label set dynamically by showTranslateConfirm() based on whether a paid key is configured, so this static label is just a placeholder before JS fills it in. -->
       <div id="translateConfirm" class="alert hidden">
         <p id="translateConfirmText"></p>
