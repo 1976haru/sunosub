@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Type } from '@google/genai';
 import { requireGeminiClient, withRetry, isRateLimitError, isServerError } from '../lib/gemini.js';
+import { logGeminiError, snippetForLog } from '../lib/geminiErrorLog.js';
 import { getTodayGeminiUsage } from '../lib/geminiUsage.js';
 import { getCachedTranslations, setCachedTranslations } from '../lib/ytTranslationCache.js';
 import { currentKey, hasPaidKey } from '../lib/keyStore.js';
@@ -373,24 +374,24 @@ ${title}`;
  * thoughtsTokenCount to produce a 17-token title rewrite — thinking was
  * silently the majority of every regenerate call's cost.
  */
-async function generateWithOptionalThinking(ai, { contents, config }, { label }) {
+async function generateWithOptionalThinking(ai, { contents, config }, { label, context }) {
   const call = (includeThinking) => ai.models.generateContent({
     model: MODEL,
     contents,
     config: { ...config, ...(includeThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
   });
   try {
-    return await withRetry(() => call(!skipThinkingConfig), { label, tier: 'paid' });
+    return await withRetry(() => call(!skipThinkingConfig), { label, tier: 'paid', context });
   } catch (error) {
     if (!skipThinkingConfig && isThinkingUnsupportedError(error)) {
       skipThinkingConfig = true;
-      return withRetry(() => call(false), { label, tier: 'paid' });
+      return withRetry(() => call(false), { label, tier: 'paid', context });
     }
     throw error;
   }
 }
 
-async function generateTranslation(ai, prompt, scope) {
+async function generateTranslation(ai, prompt, scope, languageCount) {
   // TASK CS-v1.8 — translate is one of the two paid-tier call sites (see
   // lib/keyStore.js's currentKey('paid')); everything else in this file
   // stays on the free tier.
@@ -403,7 +404,7 @@ async function generateTranslation(ai, prompt, scope) {
   return generateWithOptionalThinking(ai, {
     contents: prompt,
     config: { responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 16384 },
-  }, { label: 'yt/translate' });
+  }, { label: 'yt/translate', context: { scope, languageCount } }); // TASK 후속 — .gemini_errors.log에 실릴 필드
 }
 
 router.get('/status', (req, res) => {
@@ -571,7 +572,7 @@ router.post('/translate', async (req, res, next) => {
         const prompt = scope === 'title'
           ? buildTranslatePromptTitleOnly(title, languagesToFetch)
           : buildTranslatePromptFull(title, description, languagesToFetch);
-        response = await generateTranslation(ai, prompt, scope);
+        response = await generateTranslation(ai, prompt, scope, languagesToFetch.length);
       } catch (geminiError) {
         // TASK CS-v2.0 작업 A 요구사항 1 — 429는 요청 전체를 그냥 끝내지
         // 않는다. requireGeminiClient가 던지는 일일 상한(dailyLimitReached)과
@@ -656,6 +657,24 @@ router.post('/translate', async (req, res, next) => {
       // we happened to already have a name for.
       const recoveredLanguages = new Set(fetchedResults.map((r) => r.language));
       missingLanguages = languagesToFetch.filter((lang) => !recoveredLanguages.has(lang));
+
+      // TASK 후속 — 429/서버오류(lib/gemini.js가 남김)와 구분되는 세 번째
+      // 실패 유형: 호출 자체는 성공했지만 응답이 요청한 언어를 다 못
+      // 채웠다(파싱 실패 후 salvage든, 그냥 개수가 모자라든). quota/server와
+      // 같은 파일·같은 형식으로 남겨야 "오늘 실패의 대부분이 어느
+      // 유형인지"를 한 파일에서 볼 수 있다.
+      if (missingLanguages.length > 0) {
+        logGeminiError({
+          label: 'yt/translate',
+          tier: hasPaidKey() ? 'paid' : 'free',
+          scope,
+          languageCount: languagesToFetch.length,
+          status: 200,
+          type: 'truncated',
+          missingCount: missingLanguages.length,
+          responseSnippet: snippetForLog(response.text),
+        });
+      }
 
       // TASK CS-v1.8 — cache whatever actually came back, salvaged partial
       // batch included, so the languages that DID complete never cost a

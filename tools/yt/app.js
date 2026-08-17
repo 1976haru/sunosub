@@ -368,12 +368,24 @@ function upsertResults(newResults, scope) {
   }
 }
 
-// TASK CS-v2.1 후속 버그 [1] — missingLanguages(성공 응답의 일부 누락이든,
-// 429 실패 응답의 미처리 언어든)에 나온 언어의 연속 실패 횟수를 늘린다.
-function recordMissing(languages) {
+// TASK 후속 — missingLanguages(성공 응답의 일부 누락이든, 429 실패 응답의
+// 미처리 언어든)에 나온 언어의 연속 실패 횟수와 "가장 최근 실패 이유"를
+// 기록한다. reason은 화면에 그대로 노출되는 짧은 한국어 문구다.
+function recordMissing(languages, reason) {
   for (const lang of languages || []) {
-    state.languageFailCounts.set(lang, (state.languageFailCounts.get(lang) || 0) + 1);
+    const prev = state.languageFailCounts.get(lang);
+    state.languageFailCounts.set(lang, { count: (prev?.count || 0) + 1, reason: reason || prev?.reason || '알 수 없음' });
   }
+}
+
+// TASK 후속 — 429 실패 응답(quotaExhausted)의 원인을 화면에 붙일 짧은
+// 한국어 문구로 요약한다. quotaScopeNote()(quotaChoice 박스용, 더 긴
+// 안내문)와 다른 용도 — 이건 언어 하나 옆에 붙는 짧은 라벨이다.
+function quotaFailReason(error) {
+  if (error.dailyLimitReached) return '유료 상한 도달';
+  if (error.quotaScope === 'daily') return '하루 한도 초과';
+  if (error.quotaScope === 'per-minute') return '분당 한도 초과';
+  return '한도 초과';
 }
 
 /*
@@ -429,8 +441,11 @@ function renderPendingLanguages() {
   const expanded = !listEl.classList.contains('hidden');
   $('pendingToggleBtn').textContent = `${expanded ? '남은 언어 접기' : '남은 언어 보기'} (${pending.length}개)`;
   listEl.innerHTML = pending.map(lang => {
-    const failCount = state.languageFailCounts.get(lang) || 0;
-    return `<div>${escapeHtml(lang)}${failCount > 0 ? ` <span class="fail-note">(${failCount}회 연속 실패)</span>` : ''}</div>`;
+    const fail = state.languageFailCounts.get(lang);
+    // TASK 후속 — "3회 연속 실패"만으로는 기다릴지 포기할지 판단이 안 된다는
+    // 지적대로, 원인까지 한 줄에 붙인다: "3회 연속 실패 (한도 초과)".
+    const failNote = fail ? ` <span class="fail-note">(${fail.count}회 연속 실패 (${escapeHtml(fail.reason)}))</span>` : '';
+    return `<div>${escapeHtml(lang)}${failNote}</div>`;
   }).join('');
 }
 
@@ -469,7 +484,10 @@ async function runOneScopeGroup(overallLanguages, languages, scope, { forcePaid 
     cacheHitCount += data.fromCache?.length || 0;
     if (data.missingLanguages?.length) {
       missing.push(...data.missingLanguages);
-      recordMissing(data.missingLanguages);
+      // TASK 후속 — 호출은 성공(HTTP 200)했지만 일부 언어가 안 왔다. 서버가
+      // 응답 파싱 중 잘림을 감지했으면(salvage로 복구) '응답 잘림', 아니면
+      // 모델이 그냥 일부 언어를 안 만든 경우라 '응답에서 누락'으로 구분한다.
+      recordMissing(data.missingLanguages, data.truncated ? '응답 잘림' : '응답에서 누락');
     }
     upsertResults(data.results, data.scope || scope);
     renderResults();
@@ -537,7 +555,7 @@ async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid 
     if (error.quotaExhausted) {
       quotaError = error;
       upsertResults(error.results || [], error.scope);
-      recordMissing(error.missingLanguages); // TASK CS-v2.1 후속 버그 [1] — 429로 못 받은 언어도 연속 실패로 집계
+      recordMissing(error.missingLanguages, quotaFailReason(error)); // TASK 후속 — 429로 못 받은 언어도 이유와 함께 집계
       renderResults();
       renderPendingLanguages();
       saveLocal();
