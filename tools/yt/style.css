@@ -35,6 +35,10 @@ code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; 
 .badge, .pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.04); color: var(--muted); font-size: 12px; font-weight: 700; }
 .badge.ok { color: var(--success); border-color: rgba(72,213,154,.35); }
 .badge.warn { color: #ffd166; border-color: rgba(255,209,102,.35); }
+/* TASK CS-v2.2 작업 C — 상단 배지 줄 안에서 모델을 고르는 select/free-text input.
+   .publish-grid select와 같은 색/모양이지만 배지 줄에 맞게 폭을 자동으로 줄인다. */
+.model-select, .model-input { width: auto; max-width: 260px; border: 1px solid var(--line); border-radius: 999px; background: #091426; color: var(--text); padding: 7px 11px; font-size: 12px; font-weight: 700; }
+.model-input { max-width: 220px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px; box-shadow: var(--shadow); backdrop-filter: blur(16px); margin-bottom: 18px; }
 .tabs { display: inline-flex; padding: 4px; background: #091426; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 18px; }
 .tab { border: 0; background: transparent; padding: 9px 14px; border-radius: 9px; color: var(--muted); cursor: pointer; font-weight: 800; }

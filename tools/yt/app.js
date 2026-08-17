@@ -41,7 +41,22 @@ const state = {
   // wording: "비용이 발생합니다" only makes sense when a paid key is
   // actually configured. Set from /api/yt/status in loadStatus().
   paidKeyConfigured: false,
+  // TASK CS-v2.2 작업 A/C — 번역·재생성·추출에 실제로 보낼 모델. null이면
+  // 아직 아무것도 정해지지 않은 상태(restoreLocal()이 저장된 값을 채우고,
+  // 그래도 비어 있으면 loadStatus()가 서버 기본값으로 채운다). 서버가
+  // 검증/폴백하므로(routes/yt.js resolveModel) 여기서 잘못된 값을 보내도
+  // 서버가 막아준다 — 클라이언트는 UX용 확인일 뿐 최종 방어선이 아니다.
+  model: null,
+  // TASK CS-v2.2 작업 B.2 — GET /api/yt/models 결과. 비어 있으면(조회
+  // 실패) 드롭다운 대신 자유 입력 칸으로 폴백한다.
+  modelList: [],
 };
+
+// TASK CS-v2.2 — /api/yt/status 응답 전체를 기억해 둔다. 배지 줄은
+// loadStatus()·loadModelList() 양쪽에서 다시 그려야 하는데(모델 목록이
+// status보다 늦게 도착할 수 있음), 매번 다시 fetch하지 않고 마지막으로
+// 받은 status를 재사용해 다시 그린다.
+let lastStatus = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -105,51 +120,161 @@ function formatTokensMan(tokens) {
   return `약 ${(tokens / 10000).toFixed(1)}만`;
 }
 
+/*
+ * TASK CS-v2.2 작업 C 요구사항 1 — 상단 배지의 모델 "표시"를 실제로 고를 수
+ * 있는 컨트롤로 바꾼다. state.modelList가 비어 있으면(목록 조회 실패 —
+ * 요구사항 B.2 "네트워크 문제로 화면이 막히면 안 된다") select 대신 자유
+ * 입력 칸으로 폴백한다. 목록에 현재 state.model이 없는 드문 경우(예:
+ * localStorage에 저장된 값이 그 사이 은퇴됨)도 select 맨 위에 실제 값을
+ * 그대로 보여준다 — 조용히 다른 값으로 바뀐 것처럼 보이면 안 된다.
+ */
+function buildModelControlHtml() {
+  const current = state.model || '';
+  if (state.modelList.length) {
+    const hasCurrent = state.modelList.some((m) => m.name === current);
+    const currentOptionHtml = hasCurrent ? '' : `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (목록에 없음)</option>`;
+    const optionsHtml = state.modelList.map((m) => {
+      const label = m.displayName ? `${m.displayName} (${m.name})` : m.name;
+      return `<option value="${escapeHtml(m.name)}" ${m.name === current ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
+    return `<select id="modelSelect" class="model-select" title="번역·재생성·추출에 사용할 Gemini 모델">${currentOptionHtml}${optionsHtml}</select>`;
+  }
+  return `<input id="modelInput" class="model-input" type="text" value="${escapeHtml(current)}" placeholder="예: gemini-3.5-flash" title="모델 목록을 불러오지 못해 직접 입력합니다" />`;
+}
+
+function wireModelControl() {
+  const select = $('modelSelect');
+  if (select) select.addEventListener('change', () => onModelChange(select.value));
+  const input = $('modelInput');
+  if (input) input.addEventListener('change', () => onModelChange(input.value.trim()));
+}
+
+function renderStatusBadges() {
+  const status = lastStatus;
+  if (!status) return;
+  const usage = status.geminiUsageToday;
+  // TASK CS-v1.7 — reference-only badge: this PC's 5 tools combined, today.
+  // Doesn't gate anything (lib/geminiUsage.js is display-only by design);
+  // the actual limit is whatever Google AI Studio's dashboard says.
+  const usageBadge = usage
+    ? `<span class="badge" title="오늘 이 PC의 5개 도구 합산 호출 수 · 참고용, 실제 한도는 Google AI Studio 대시보드 기준">오늘 Gemini 호출 ${usage.total}회${usage.failed ? ` (실패 ${usage.failed})` : ''}</span>`
+    : '';
+  // TASK CS-v1.8 — this tool's 번역/재생성 calls go through the paid slot
+  // whenever a paid key is configured (lib/keyStore.js's currentKey('paid')
+  // fallback), so make that visible right where the cost is actually incurred.
+  const tierBadge = status.paidKeyConfigured
+    ? `<span class="badge warn" title="이 화면의 번역·재생성 호출만 유료 키로 나갑니다. 다른 4개 도구는 무료 키를 그대로 씁니다.">번역: 유료 키 사용 중</span>`
+    : `<span class="badge" title="유료 키를 설정하지 않아 무료 키로 동작합니다.">번역: 무료 키 사용 중</span>`;
+  // TASK CS-v1.8 task D.7 — cost only stays managed if it's visible.
+  // TASK CS-v1.8 follow-up — was `paidCalls ? ... : ''`, which lit up as
+  // "유료 호출 N회" even with no paid key configured, because
+  // byTier.paid used to count every request routed to the paid SLOT
+  // (i.e. every /translate·/regenerate call), not every request that
+  // actually spent a paid KEY (lib/gemini.js's currentKey('paid')
+  // silently falls back to the free key when unset). That counting bug
+  // is fixed at the source now, but a day's worth of already-recorded
+  // byTier.paid from before the fix stays mislabeled in
+  // .gemini_usage.json (left as-is, see the fix commit) until it ages
+  // out at midnight — so gate the "유료" framing on paidKeyConfigured
+  // itself, not just a nonzero count, rather than trusting stale data.
+  const paidCalls = usage?.byTier?.paid || 0;
+  const paidOutputTokens = usage?.tokens?.paid?.output || 0;
+  const costBadge = (status.paidKeyConfigured && paidCalls)
+    ? `<span class="badge warn" title="유튜브 번역기의 번역·재생성 호출만 집계 · 참고용, 실제 청구는 Google Cloud 콘솔 기준">오늘 유료 호출 ${paidCalls}회 · 출력 ${formatTokensMan(paidOutputTokens)} 토큰</span>`
+    : '';
+  $('statusBadges').innerHTML = `
+    <span class="badge ${status.geminiConfigured ? 'ok' : 'warn'}">Gemini ${status.geminiConfigured ? '설정됨' : '키 필요'}</span>
+    <span class="badge ${status.youtubeApiConfigured ? 'ok' : 'warn'}">YouTube API ${status.youtubeApiConfigured ? '설정됨' : '선택 사항'}</span>
+    ${buildModelControlHtml()}
+    ${tierBadge}
+    ${costBadge}
+    ${usageBadge}`;
+  wireModelControl();
+}
+
+// TASK CS-v2.2 작업 C 요구사항 3 — 방향만 안내하고 구체적 금액은 하드코딩하지
+// 않는다(단가는 자주 바뀌고, geminiConfig.json의 "추정값 금지" 원칙과 같은
+// 이유). 모델이 바뀌어도 이 문구 자체는 바뀔 이유가 없어 loadStatus() 시점에
+// 한 번만 채운다.
+function renderModelCostHint() {
+  const el = $('modelCostHint');
+  if (!el) return;
+  el.innerHTML = 'lite 계열이 더 저렴합니다. 최신 단가는 <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener">구글 공식 요금표</a>에서 확인하세요. 모델을 바꾸면 캐시가 무효화되어 다시 번역됩니다.';
+}
+
 async function loadStatus() {
   try {
     const status = await api('/api/yt/status');
+    lastStatus = status;
     state.geminiConfigured = Boolean(status.geminiConfigured);
     state.paidKeyConfigured = Boolean(status.paidKeyConfigured);
-    const usage = status.geminiUsageToday;
-    // TASK CS-v1.7 — reference-only badge: this PC's 5 tools combined, today.
-    // Doesn't gate anything (lib/geminiUsage.js is display-only by design);
-    // the actual limit is whatever Google AI Studio's dashboard says.
-    const usageBadge = usage
-      ? `<span class="badge" title="오늘 이 PC의 5개 도구 합산 호출 수 · 참고용, 실제 한도는 Google AI Studio 대시보드 기준">오늘 Gemini 호출 ${usage.total}회${usage.failed ? ` (실패 ${usage.failed})` : ''}</span>`
-      : '';
-    // TASK CS-v1.8 — this tool's 번역/재생성 calls go through the paid slot
-    // whenever a paid key is configured (lib/keyStore.js's currentKey('paid')
-    // fallback), so make that visible right where the cost is actually incurred.
-    const tierBadge = status.paidKeyConfigured
-      ? `<span class="badge warn" title="이 화면의 번역·재생성 호출만 유료 키로 나갑니다. 다른 4개 도구는 무료 키를 그대로 씁니다.">번역: 유료 키 사용 중</span>`
-      : `<span class="badge" title="유료 키를 설정하지 않아 무료 키로 동작합니다.">번역: 무료 키 사용 중</span>`;
-    // TASK CS-v1.8 task D.7 — cost only stays managed if it's visible.
-    // TASK CS-v1.8 follow-up — was `paidCalls ? ... : ''`, which lit up as
-    // "유료 호출 N회" even with no paid key configured, because
-    // byTier.paid used to count every request routed to the paid SLOT
-    // (i.e. every /translate·/regenerate call), not every request that
-    // actually spent a paid KEY (lib/gemini.js's currentKey('paid')
-    // silently falls back to the free key when unset). That counting bug
-    // is fixed at the source now, but a day's worth of already-recorded
-    // byTier.paid from before the fix stays mislabeled in
-    // .gemini_usage.json (left as-is, see the fix commit) until it ages
-    // out at midnight — so gate the "유료" framing on paidKeyConfigured
-    // itself, not just a nonzero count, rather than trusting stale data.
-    const paidCalls = usage?.byTier?.paid || 0;
-    const paidOutputTokens = usage?.tokens?.paid?.output || 0;
-    const costBadge = (status.paidKeyConfigured && paidCalls)
-      ? `<span class="badge warn" title="유튜브 번역기의 번역·재생성 호출만 집계 · 참고용, 실제 청구는 Google Cloud 콘솔 기준">오늘 유료 호출 ${paidCalls}회 · 출력 ${formatTokensMan(paidOutputTokens)} 토큰</span>`
-      : '';
-    $('statusBadges').innerHTML = `
-      <span class="badge ${status.geminiConfigured ? 'ok' : 'warn'}">Gemini ${status.geminiConfigured ? '설정됨' : '키 필요'}</span>
-      <span class="badge ${status.youtubeApiConfigured ? 'ok' : 'warn'}">YouTube API ${status.youtubeApiConfigured ? '설정됨' : '선택 사항'}</span>
-      <span class="badge">${escapeHtml(status.model)}</span>
-      ${tierBadge}
-      ${costBadge}
-      ${usageBadge}`;
+    // TASK CS-v2.2 작업 A 폴백 순서: 요청값 -> 환경변수 -> 기본값. restoreLocal()이
+    // 이미 저장된 값을 채웠으면 그 값을 우선하고, 없을 때만 서버 기본값을 쓴다.
+    if (!state.model) state.model = status.model;
+    renderStatusBadges();
+    renderModelCostHint();
     applyTranslateGate();
   } catch (error) {
     $('statusBadges').innerHTML = '<span class="badge warn">서버 상태 확인 실패</span>';
+  }
+}
+
+/*
+ * TASK CS-v2.2 작업 B.2 — 목록 조회 실패(네트워크 문제 등)는 조용히
+ * state.modelList를 비운 채로 둔다. buildModelControlHtml()이 빈 목록을
+ * 보면 자유 입력 칸으로 폴백하므로, 이 함수의 실패가 화면을 막지 않는다.
+ */
+async function loadModelList() {
+  try {
+    const data = await api('/api/yt/models');
+    state.modelList = Array.isArray(data.models) ? data.models : [];
+  } catch {
+    state.modelList = [];
+  }
+  renderStatusBadges();
+}
+
+/** /translate·/regenerate가 404(모델 사용 불가)를 주면 목록을 갱신해 보여준다 — 조용히 다른 모델로 갈아타지 않는다(요구사항 B.3). */
+function handleModelNotFoundError(error) {
+  if (!error?.modelNotFound) return false;
+  if (Array.isArray(error.availableModels) && error.availableModels.length) {
+    state.modelList = error.availableModels;
+    renderStatusBadges();
+  }
+  return true;
+}
+
+function applyModelChange(newModel) {
+  state.model = newModel;
+  state.results = [];
+  state.resultsSourceKey = null;
+  state.languageFailCounts.clear();
+  renderResults();
+  renderPendingLanguages();
+  renderStatusBadges();
+  saveLocal();
+  showToast(`모델이 "${newModel}"(으)로 바뀌었습니다. 기존 번역 결과가 초기화되었습니다.`);
+}
+
+function showModelChangeConfirm(newModel) {
+  $('modelChangeConfirmText').textContent = `모델을 "${newModel}"(으)로 바꾸면 이미 번역된 결과가 모두 초기화되고 다시 번역해야 합니다. ${costPhrase()}. 계속할까요?`;
+  $('modelChangeConfirmYesBtn').textContent = `모델 변경 (${costActionLabel()})`;
+  $('modelChangeConfirm').dataset.pendingModel = newModel;
+  $('modelChangeConfirm').classList.remove('hidden');
+}
+
+function hideModelChangeConfirm() {
+  $('modelChangeConfirm').classList.add('hidden');
+  renderStatusBadges(); // 취소 시 드롭다운/입력칸을 실제 state.model로 되돌려 다시 그린다
+}
+
+function onModelChange(newModel) {
+  const trimmed = String(newModel || '').trim();
+  if (!trimmed || trimmed === state.model) { renderStatusBadges(); return; }
+  if (state.results.length > 0) {
+    showModelChangeConfirm(trimmed);
+  } else {
+    applyModelChange(trimmed);
   }
 }
 
@@ -285,7 +410,7 @@ async function extractVideo() {
   $('extractBtn').disabled = true;
   $('extractBtn').textContent = '추출 중…';
   try {
-    const data = await api('/api/yt/extract', { method: 'POST', body: JSON.stringify({ url }) });
+    const data = await api('/api/yt/extract', { method: 'POST', body: JSON.stringify({ url, model: state.model }) });
     $('sourceTitle').value = data.title || '';
     $('sourceDescription').value = data.description || '';
     setSourceMeta(data);
@@ -479,7 +604,7 @@ async function runOneScopeGroup(overallLanguages, languages, scope, { forcePaid 
     const batch = batches[i];
     const data = await api('/api/yt/translate', {
       method: 'POST',
-      body: JSON.stringify({ title, description, languages: batch, scope, ...(forcePaid ? { forcePaid: true } : {}) }),
+      body: JSON.stringify({ title, description, languages: batch, scope, model: state.model, ...(forcePaid ? { forcePaid: true } : {}) }),
     });
     cacheHitCount += data.fromCache?.length || 0;
     if (data.missingLanguages?.length) {
@@ -584,6 +709,12 @@ async function runScopedTranslate(languagesToProcess, { resetResults, forcePaid 
       // 넘겨서 화면에서 구분해 보여준다.
       const skippedGroups = groups.slice(currentGroupIndex + 1);
       showQuotaChoice(pendingLanguages(languagesToProcess), quotaError, skippedGroups);
+    } else if (handleModelNotFoundError(error)) {
+      // TASK CS-v2.2 작업 B 요구사항 3 — 목록은 이미 handleModelNotFoundError가
+      // 갱신해 보여줬다. 조용히 다른 모델로 바꿔 재시도하지 않는다 —
+      // 사용자가 상단에서 직접 다른 모델을 고른 뒤 다시 눌러야 한다.
+      const remaining = pendingLanguages(languagesToProcess).length;
+      setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. ${error.message}`);
     } else {
       const remaining = pendingLanguages(languagesToProcess).length;
       setError('translateError', `${languagesToProcess.length - remaining}개 언어까지 저장되었습니다. 처리 중 오류가 발생했습니다: ${error.message}`);
@@ -804,6 +935,7 @@ function renderResults() {
               description: $('sourceDescription').value,
               language: result.language,
               field,
+              model: state.model,
             })
           });
           if (field === 'title') result.translatedTitle = data.text;
@@ -813,6 +945,7 @@ function renderResults() {
           saveLocal();
           showToast('재생성했습니다.');
         } catch (error) {
+          handleModelNotFoundError(error);
           setError('translateError', error.message);
         } finally {
           button.disabled = false;
@@ -875,6 +1008,7 @@ function saveLocal() {
     results: state.results,
     resultsSourceKey: state.resultsSourceKey,
     sourceMeta: state.sourceMeta,
+    model: state.model, // TASK CS-v2.2 작업 C 요구사항 2 — 다음 실행에도 유지
   };
   localStorage.setItem('youtubeTranslatorLocalState', JSON.stringify(payload));
 }
@@ -895,6 +1029,7 @@ function restoreLocal() {
     // above) is the correct value for that older data too.
     state.resultsSourceKey = payload.resultsSourceKey ?? (state.results.length ? currentSourceKey() : null);
     state.sourceMeta = payload.sourceMeta || null;
+    if (payload.model) state.model = payload.model; // TASK CS-v2.2 — 없으면 loadStatus()가 서버 기본값으로 채운다
     setSourceMeta(state.sourceMeta);
     updateTitleCount();
     renderResults();
@@ -946,6 +1081,12 @@ function setupEvents() {
     await runScopedTranslate(selected, { resetResults: true });
   });
   $('translateConfirmNoBtn').addEventListener('click', hideTranslateConfirm);
+  $('modelChangeConfirmYesBtn').addEventListener('click', () => {
+    const newModel = $('modelChangeConfirm').dataset.pendingModel;
+    $('modelChangeConfirm').classList.add('hidden');
+    applyModelChange(newModel);
+  });
+  $('modelChangeConfirmNoBtn').addEventListener('click', hideModelChangeConfirm);
   // TASK CS-v2.0 작업 A — 남은 언어(quotaChoice에 저장해둔 목록)만 forcePaid로
   // 다시 보낸다. resetResults:false — 이미 성공한 언어는 그대로 둔다.
   $('quotaChoicePaidBtn').addEventListener('click', async () => {
@@ -966,13 +1107,16 @@ function setupEvents() {
   $('exportJsonBtn').addEventListener('click', exportJson);
   $('copyAllBtn').addEventListener('click', copyAll);
   window.addEventListener('beforeunload', saveLocal);
-  window.addEventListener('creator-studio:key-updated', loadStatus);
+  // TASK CS-v2.2 — 키가 바뀌면(특히 유료 키 추가/변경) 그 프로젝트에서 쓸 수
+  // 있는 모델 목록도 달라질 수 있어 같이 다시 불러온다.
+  window.addEventListener('creator-studio:key-updated', () => { loadStatus(); loadModelList(); });
 }
 
 restoreLocal();
 renderLanguages();
 setupEvents();
 loadStatus();
+loadModelList();
 
 /* ------------------------------------------------------------------ *
  * TASK CS-v1.6 — 유튜브에 번역 자동 등록 (videos.update: localizations)
