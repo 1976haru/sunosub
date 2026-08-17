@@ -484,10 +484,17 @@ async function runOneScopeGroup(overallLanguages, languages, scope, { forcePaid 
     cacheHitCount += data.fromCache?.length || 0;
     if (data.missingLanguages?.length) {
       missing.push(...data.missingLanguages);
-      // TASK 후속 — 호출은 성공(HTTP 200)했지만 일부 언어가 안 왔다. 서버가
-      // 응답 파싱 중 잘림을 감지했으면(salvage로 복구) '응답 잘림', 아니면
-      // 모델이 그냥 일부 언어를 안 만든 경우라 '응답에서 누락'으로 구분한다.
-      recordMissing(data.missingLanguages, data.truncated ? '응답 잘림' : '응답에서 누락');
+      // TASK 후속(재조사) — 100자 초과로 빠진 언어는 실제 길이까지 보여준다
+      // ("스웨덴어 139자 → 100자 초과로 제외") — 이게 오늘 실패의 실제
+      // 원인이었는데 지금까지는 '응답에서 누락'으로만 뭉뚱그려져 원인
+      // 파악이 안 됐다. 나머지(오버사이즈가 아닌 것)만 기존처럼 잘림/누락으로 구분.
+      const oversizedByLang = new Map((data.oversizedTitles || []).map((o) => [o.language, o.length]));
+      for (const lang of data.missingLanguages) {
+        const reason = oversizedByLang.has(lang)
+          ? `${oversizedByLang.get(lang)}자 → 100자 초과로 제외`
+          : (data.truncated ? '응답 잘림' : '응답에서 누락');
+        recordMissing([lang], reason);
+      }
     }
     upsertResults(data.results, data.scope || scope);
     renderResults();

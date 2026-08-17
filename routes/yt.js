@@ -295,6 +295,22 @@ function isThinkingUnsupportedError(error) {
  *      the model was never told this is a music-playlist channel.
  * Rules 3-6 below address these directly; the "MUSIC PLAYLIST" framing
  * in the intro line addresses #5.
+ *
+ * TASK 후속(2026-08-17, 재조사) — 6th real issue, found via
+ * .gemini_errors.log after adding per-call failure logging: this specific
+ * channel's real title already contains hashtags in Korean
+ * (예: "#올드팝 #7080 #추억의팝송") — not just in the description. Rule 6/7
+ * (separator + [playlist]/channel-name preservation) made the model
+ * faithfully translate/keep those hashtags too, and in longer-word
+ * languages (Swedish, German, Finnish, Hungarian, ...) that pushed
+ * translatedTitle past the 100-char hard cutoff below, silently dropping
+ * the whole language into `missingLanguages` — this was never a 429 or a
+ * genuine Gemini-side truncation (실측: HTTP 200, JSON parsed cleanly,
+ * candidatesTokenCount far under the cap). Real registered output before
+ * this fix was already inconsistent about it: 34 of the video's live
+ * localizations had already stripped the hashtags themselves, only
+ * zh-HK/zh-CN/ja kept them. Rule 8 below fixes this at the source instead
+ * of continuing to filter it out after the fact.
  */
 function buildTranslatePromptFull(title, description, languages) {
   return `You are a professional YouTube metadata localization translator for a Korean YouTube MUSIC PLAYLIST channel. Every video is a music playlist (mood/genre/era-themed background music). Use that context to resolve ambiguous words — e.g. a word that could mean "pop art" or "pop music" always means MUSIC here; a word that could mean "lyrics" or general "text" in a title refers to song content, not literature or visual art.
@@ -312,10 +328,11 @@ Rules:
 5. translatedTitle must be natural and clickable, targeting at most 90 Unicode characters including spaces — leave headroom, do not write up to the limit. Never cut, abbreviate, or truncate the channel/playlist name to make a title fit a length target; if a translation genuinely cannot fit within the limit without cutting the channel name, shorten the rest of the title instead — the channel name must always appear complete.
 6. If the original title has a structural separator between the main title and the channel/playlist name (such as "|", "-", "ㅣ"), keep an equivalent separator in the translation. Do not merge the two parts together with no separator between them.
 7. Preserve tags such as [playlist], [Playlist], and emojis.
-8. Translate normal hashtags naturally, but keep numeric hashtags such as #7080 unchanged.
-9. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
-10. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
-11. Do not add explanations, quotation marks, or extra marketing claims.
+8. If the original title itself contains hashtags (tokens starting with "#", e.g. #올드팝, #7080), do NOT include them in translatedTitle at all — omit them entirely, even numeric-looking ones like #7080. Do not translate them into words either, just remove them. This rule is only about the TITLE; hashtags inside the description are a separate matter (see rule 9 below). Hashtags repeated inside a translated title just add unreadable duplicate text in the target language, and the same hashtags already appear in the description.
+9. Translate normal hashtags naturally, but keep numeric hashtags such as #7080 unchanged.
+10. Preserve timestamps and track-list song titles at the end of the description exactly as written. Do not translate those lines.
+11. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+12. Do not add explanations, quotation marks, or extra marketing claims.
 
 Original title:
 ${title}
@@ -348,8 +365,9 @@ Rules:
 5. translatedTitle must be natural and clickable, targeting at most 90 Unicode characters including spaces — leave headroom, do not write up to the limit. Never cut, abbreviate, or truncate the channel/playlist name to make a title fit a length target; if a translation genuinely cannot fit within the limit without cutting the channel name, shorten the rest of the title instead — the channel name must always appear complete.
 6. If the original title has a structural separator between the main title and the channel/playlist name (such as "|", "-", "ㅣ"), keep an equivalent separator in the translation. Do not merge the two parts together with no separator between them.
 7. Preserve tags such as [playlist], [Playlist], and emojis.
-8. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
-9. Do not add explanations, quotation marks, or extra marketing claims.
+8. If the original title contains hashtags (tokens starting with "#", e.g. #올드팝, #7080), do NOT include them in translatedTitle at all — omit them entirely, even numeric-looking ones like #7080. Do not translate them into words either, just remove them. Hashtags repeated inside a translated title just add unreadable duplicate text in the target language, and no description is being translated in this request for them to belong to anyway.
+9. Keep URLs, email addresses, credits, handles, and proper names unchanged unless a standard localized form is clearly appropriate.
+10. Do not add explanations, quotation marks, or extra marketing claims.
 
 Original title:
 ${title}`;
@@ -564,6 +582,7 @@ router.post('/translate', async (req, res, next) => {
     let fetchedResults = [];
     let truncated = false;
     let missingLanguages = [];
+    let oversizedTitles = []; // TASK 후속(재조사) — [{language, length}], 응답에도 실어 화면에 이유를 보여준다
 
     if (languagesToFetch.length > 0) {
       let response;
@@ -641,6 +660,15 @@ router.post('/translate', async (req, res, next) => {
       // language instead of mangling it — it comes back via
       // `missingLanguages` for the caller to retry, same as a truncated
       // batch already does, rather than shipping a broken channel name.
+      //
+      // TASK 후속(2026-08-17, 재조사) — 요구사항 2: 지금까지는 이 filter가
+      // 조용히 지워서 "missing"으로만 보였다. 100자 상한은 유튜브 자체
+      // 상한이라 늘릴 수 없으므로(사용자 확인) 필터 자체는 그대로 두되,
+      // 무엇이 몇 자였는지는 남긴다 — 원인 파악이 안 됐던 근본 이유가
+      // 바로 이 "조용함"이었다.
+      oversizedTitles = fetchedResults
+        .filter((r) => Array.from(r.translatedTitle).length > 100)
+        .map((r) => ({ language: r.language, length: Array.from(r.translatedTitle).length }));
       fetchedResults = fetchedResults.filter((r) => Array.from(r.translatedTitle).length <= 100);
 
       // TASK CS-v1.8 follow-up — was gated on `truncated`, i.e. only computed
@@ -663,15 +691,33 @@ router.post('/translate', async (req, res, next) => {
       // 채웠다(파싱 실패 후 salvage든, 그냥 개수가 모자라든). quota/server와
       // 같은 파일·같은 형식으로 남겨야 "오늘 실패의 대부분이 어느
       // 유형인지"를 한 파일에서 볼 수 있다.
+      // TASK 후속(재조사) — 실측 결과 오늘 실패의 실제 원인은 429가 아니라
+      // 이 100자 필터였다(스웨덴어 139자 등, HTTP 200/파싱 정상/토큰 여유
+      // 충분한데도 missing 처리됨). missingLanguages 전부가 100자 초과
+      // 때문이면 type을 'oversized'로 더 구체적으로 남긴다 — 'truncated'는
+      // "무엇 때문인지 모르겠지만 모자람"이라는 뜻이 강해서, 원인이 이미
+      // 명확한 이 경우를 뭉뚱그리면 다음에 또 헷갈린다.
       if (missingLanguages.length > 0) {
+        const allMissingAreOversized = oversizedTitles.length > 0 && oversizedTitles.length === missingLanguages.length;
         logGeminiError({
           label: 'yt/translate',
           tier: hasPaidKey() ? 'paid' : 'free',
           scope,
           languageCount: languagesToFetch.length,
           status: 200,
-          type: 'truncated',
+          type: allMissingAreOversized ? 'oversized' : 'truncated',
           missingCount: missingLanguages.length,
+          oversizedTitles: oversizedTitles.length ? oversizedTitles : undefined,
+          // TASK 후속(재조사) — parsedTruncated: JSON 자체가 중간에 끊겨
+          // salvage가 필요했는지(=진짜 maxOutputTokens 잘림) 아니면
+          // 문법적으로 멀쩡한 JSON인데 모델이 그냥 일부 언어만 생성했는지
+          // 구분한다. responseLength/usageMetadata는 "잘려서" 짧은 건지
+          // "thinking이 출력 예산을 다 먹어서" 짧은 건지(CS-v1.8이 이미
+          // 확인한 바 있는 현상 — /regenerate가 thinkingConfig 없이 904
+          // thoughtsTokenCount를 쓴 전례가 있다) 가늠하는 데 쓴다.
+          parsedTruncated: truncated,
+          responseLength: String(response.text || '').length,
+          usageMetadata: response.usageMetadata || null,
           responseSnippet: snippetForLog(response.text),
         });
       }
@@ -694,6 +740,7 @@ router.post('/translate', async (req, res, next) => {
       model: MODEL,
       truncated,
       missingLanguages,
+      oversizedTitles, // TASK 후속(재조사) — [{language, length}], 100자 초과로 제외된 언어와 실제 길이. 화면이 "○○ N자 → 100자 초과" 로 보여줄 수 있게.
       fromCache: cachedResults.map((result) => result.language),
       scope, // TASK CS-v2.1 작업 A 요구사항 4 — 요청값과 다를 수 있으므로(향후 검증 실패 등) 실제 적용값을 응답에 담는다
     });
