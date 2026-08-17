@@ -22,7 +22,7 @@
 | 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
 | 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
 
-현재 버전: **CS-v2.1**
+현재 버전: **CS-v2.2**
 
 ---
 
@@ -120,6 +120,20 @@ npm run check    # node --check server.js  ← server.js 하나만 문법 검사
 언어들만 `scope:'full'`로 별도 요청이 나갑니다. 캐시 키(`lib/ytTranslationCache.js`)에도
 `scope`가 들어가 있어 `title`로 캐시된 항목이 `full` 조회에 잘못 히트하지 않습니다 —
 새 caller를 추가할 때 `scope`를 빠뜨리면 캐시가 조용히 오염됩니다.
+
+**CS-v2.2부터 모델을 화면에서 고를 수 있습니다.** `/translate`·`/regenerate`·`/extract`가
+요청 본문의 `model`을 받고, 폴백 순서는 요청값 → `GEMINI_MODEL` 환경변수 →
+`gemini-3.5-flash`입니다. 서버가 `resolveModel()`로 형식을 재검증합니다(영숫자·하이픈·
+마침표, 64자 이내) — 형식이 틀리면 400, 폴백 대상이 아닙니다. `GET /api/yt/models`가
+그 계정에서 실제로 쓸 수 있는 텍스트 모델 목록을 돌려주고(`ai.models.list()` 조회,
+임베딩·이미지·TTS·비디오 계열 제외 — 필터는 이름과 description을 같이 봅니다,
+"nano-banana-pro-preview"처럼 이름만으로는 안 걸러지는 이미지 모델이 실제로 있었습니다),
+화면은 이 목록으로 드롭다운을 채우고 실패하면 자유 입력으로 폴백합니다. 모델이
+404(사용 불가)를 반환하면 조용히 다른 모델로 갈아타지 않고 사용 가능한 목록과 함께
+알립니다 — 이 원칙은 협상 대상이 아닙니다(4.2와 같은 이유: 사용자가 고른 것과 다른
+모델로 돈이 나가면 안 됩니다). `skipThinkingConfigByModel`/`extractToolsModeByModel`은
+모델별로 따로 기억합니다 — 계정 전역이 아니라 모델별 속성이라 프로세스 전역 플래그
+하나로는 부정확합니다.
 
 ---
 
