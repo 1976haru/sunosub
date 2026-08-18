@@ -22,7 +22,7 @@
 | 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
 | 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
 
-현재 버전: **CS-v2.2**
+현재 버전: **CS-v2.3**
 
 ---
 
@@ -198,6 +198,26 @@ videos.list(part=snippet,localizations)
 
 **라벨 문자열은 `tools/yt/app.js`의 `LANGUAGES` 배열과 정확히 일치해야 합니다.** 오타는
 조용히 언어 하나를 누락시킵니다. 새 라벨을 쓸 때는 코드를 읽어서 확인하세요. 추측 금지.
+
+### 4.6 등록 전 길이 검증과 오류 로그 (CS-v2.3)
+
+`/publish-localizations`는 `lib/ytPublishValidation.js`의 `validatePublishPayload()`로
+videos.update에 실릴 최종 페이로드(title 100자·description 5000자·tags 합계 500자)를
+**보내기 전에** 직접 센다. `localizations`는 항상 existing(기존 등록분) + planned(이번
+등록분)를 합친 맵이므로, 이번에 건드리지 않는 예전 등록분이 지금 기준으로 초과여도 같이
+걸린다. 문제가 하나라도 있으면 videos.update를 **아예 호출하지 않고** 422로 어떤 언어의
+어떤 필드가 몇 자인지 응답한다 — dryRun 응답에도 같은 `problems[]`가 실려서 미리보기
+단계에서 "적용" 버튼이 막힌다.
+
+이 검증을 만든 계기: 실제 등록에서 "The request metadata is invalid."가 났는데,
+`lib/ytOAuth.js`의 `youtubeApi()`가 그동안 `data.error.errors[]`(구글이 필드별로 주는
+`{reason, location, locationType, message}`)를 버리고 `data.error.message` 한 줄만 썼다.
+지금은 실패마다 `.yt_errors.log`(gitignore)에 `errors[]` 전문을 남기고, location이 있으면
+사용자 메시지에도 같이 보여준다. **단, 확인해 보니 이 클래스의 오류(제목/설명 길이 초과)는
+구글이 `location`을 필드별로 주지 않고 `"body"`(전체 요청) 하나로만 준다** — 그래서
+`errors[]`를 살리는 것만으로는 어느 필드인지 알 수 없고, 4.6의 사전 검증이 실질적인
+해결책이다. `errors[]` 서핑은 위치 정보를 주는 다른 종류의 오류(예: 권한/쿼터 계열)에는
+여전히 유효하다.
 
 ---
 

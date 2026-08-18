@@ -1227,6 +1227,19 @@ function currentTranslationsForPublish() {
     }));
 }
 
+// TASK CS-v2.3 — routes/yt.js의 formatPublishProblems()와 같은 필드명을
+// 사람이 읽는 라벨로 바꾼다. 서버가 이미 error.message로 같은 문장을 만들어
+// 주지만(적용을 막을 때), 미리보기 단계에서는 에러가 아니라 dryRun 응답의
+// problems[]로 오므로 화면에서 따로 조립해야 한다.
+function publishProblemLabel(field) {
+  if (field === 'snippet.title') return '영상 제목(snippet.title)';
+  if (field === 'snippet.description') return '영상 설명(snippet.description)';
+  if (field === 'snippet.tags') return '태그 전체 합계(snippet.tags)';
+  const m = /^localizations\.([^.]+)\.(title|description)$/.exec(field);
+  if (m) return `${m[2] === 'title' ? '번역 제목' : '번역 설명'} (${m[1]})`;
+  return field;
+}
+
 function renderPublishReport(data, applied) {
   const box = $('publishReport');
   const rows = (applied ? data.published : data.planned) || [];
@@ -1236,6 +1249,12 @@ function renderPublishReport(data, applied) {
   parts.push(`<h4>${applied ? '등록 완료' : '미리보기 — 아직 아무것도 등록되지 않았습니다'}</h4>`);
   parts.push(`<p>영상: <strong>${escapeHtml(data.videoTitle || data.videoId)}</strong> · 원문 언어 <code>${escapeHtml(data.defaultLanguage)}</code>` +
     (applied ? ` · 현재 등록된 언어 ${data.totalLocalizations}개` : '') + '</p>');
+
+  if (data.problems?.length) {
+    parts.push(`<p class="bad">⚠ 유튜브 길이 제한 초과 ${data.problems.length}건 — 이대로는 등록할 수 없습니다.</p><ul>` +
+      data.problems.map((p) =>
+        `<li>${escapeHtml(publishProblemLabel(p.field))} — ${p.length}자 (최대 ${p.limit}자)</li>`).join('') + '</ul>');
+  }
 
   if (rows.length) {
     parts.push(`<p class="ok">${applied ? '등록됨' : '등록 예정'} ${rows.length}개 언어</p><ul>` + rows.map((row) => {
@@ -1280,7 +1299,7 @@ async function previewPublish() {
     });
     publishState.plan = { videoId, defaultLanguage: data.defaultLanguage, translations };
     renderPublishReport(data, false);
-    $('applyPublishBtn').disabled = !data.planned?.length;
+    $('applyPublishBtn').disabled = !data.planned?.length || Boolean(data.problems?.length);
   } catch (error) {
     setError('publishError', error.message);
     publishState.plan = null;

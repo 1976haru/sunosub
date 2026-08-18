@@ -24,6 +24,7 @@ import {
   youtubeApi,
 } from '../lib/ytOAuth.js';
 import { fetchSupportedLanguages, planLocalizations } from '../lib/ytLanguages.js';
+import { validatePublishPayload, formatPublishProblems } from '../lib/ytPublishValidation.js';
 
 const router = Router();
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
@@ -1211,22 +1212,6 @@ router.post('/publish-localizations', async (req, res, next) => {
     const existing = video.localizations || {};
     const overwriting = planned.filter((p) => existing[p.code]).map((p) => p.code);
 
-    if (dryRun) {
-      return res.json({
-        dryRun: true,
-        videoId,
-        videoTitle: video.snippet?.title || '',
-        currentDefaultLanguage: video.snippet?.defaultLanguage || '',
-        defaultLanguage,
-        planned,
-        skipped,
-        overwriting,
-        existingCount: Object.keys(existing).length,
-      });
-    }
-
-    if (!planned.length) throw Object.assign(new Error('등록 가능한 언어가 하나도 없습니다.'), { status: 400 });
-
     // Read-modify-write: everything already on the video is carried over
     // verbatim, because videos.update deletes any omitted property.
     //
@@ -1252,6 +1237,37 @@ router.post('/publish-localizations', async (req, res, next) => {
       defaultLanguage,
     };
     if (Array.isArray(video.snippet?.tags) && video.snippet.tags.length) snippet.tags = video.snippet.tags;
+
+    // TASK CS-v2.3 — 유튜브에 보내기 전 서버가 직접 길이를 센다. `localizations`는
+    // existing(예전 등록분) + planned(이번 등록분)를 이미 합친 맵이라, 예전에
+    // 등록됐지만 지금 기준으로 초과인 언어도 여기서 같이 걸린다(요구사항 3).
+    const problems = validatePublishPayload({ snippet, localizations });
+
+    if (dryRun) {
+      return res.json({
+        dryRun: true,
+        videoId,
+        videoTitle: video.snippet?.title || '',
+        currentDefaultLanguage: video.snippet?.defaultLanguage || '',
+        defaultLanguage,
+        planned,
+        skipped,
+        overwriting,
+        existingCount: Object.keys(existing).length,
+        problems,
+      });
+    }
+
+    if (!planned.length) throw Object.assign(new Error('등록 가능한 언어가 하나도 없습니다.'), { status: 400 });
+
+    // 미리보기와 똑같은 검증을 적용 직전에 한 번 더 돈다(4.1 — 적용 시점에
+    // "계획"은 다시 계산하지 않지만, 계획을 보낼지 말지의 안전 검증은 항상
+    // 다시 한다). 넘는 게 있으면 유튜브에 아예 보내지 않는다 — 40개 중
+    // 하나가 초과라고 전체 PUT이 거부되는 것보다, 어떤 언어의 어떤 필드가
+    // 몇 자인지 먼저 알려주고 사용자가 고치게 하는 편이 낫다.
+    if (problems.length) {
+      throw Object.assign(new Error(formatPublishProblems(problems)), { status: 422, problems });
+    }
 
     const updated = await youtubeApi('videos', {
       method: 'PUT',
