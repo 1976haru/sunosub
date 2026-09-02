@@ -121,3 +121,26 @@ textarea { resize: vertical; line-height: 1.6; }
 .publish-report .warn { color: #ffd166; }
 .publish-report .bad { color: var(--danger); }
 @media (max-width: 720px) { .publish-grid { grid-template-columns: 1fr; } }
+
+/* TASK CS-v2.4 — 유튜브 계정 목록. 행 하나 = 계정 하나이고, 왼쪽 점이 지금
+   선택된 계정이다. 행은 다시 그려지므로 개별 버튼에 리스너를 달지 않고
+   .account-list에 이벤트를 위임한다(tools/yt/app.js). */
+.account-box { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: #0b1729; padding: 14px 16px; }
+.account-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.account-add input { flex: 1 1 240px; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: #091426; color: var(--text); padding: 12px 13px; }
+.account-list { margin: 12px 0 4px; display: flex; flex-direction: column; gap: 8px; }
+.account-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; background: #091426; padding: 10px 12px; cursor: pointer; }
+.account-row:hover { border-color: #3b5a86; }
+.account-row.active { border-color: rgba(62,231,209,.55); background: #0c1c31; }
+.account-dot { width: 10px; height: 10px; border-radius: 50%; background: #2a3a55; flex: none; }
+.account-row.active .account-dot { background: var(--cyan); box-shadow: 0 0 0 4px rgba(62,231,209,.15); }
+.account-main { flex: 1 1 200px; min-width: 0; }
+.account-label { font-weight: 800; color: var(--text); font-size: 14px; }
+.account-meta { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
+.account-meta .warn { color: #ffd166; }
+.account-meta .bad { color: var(--danger); }
+.account-actions { display: flex; gap: 6px; flex: none; }
+.account-empty { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.account-rename { display: flex; gap: 6px; flex: 1 1 200px; }
+.account-rename input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #0b1729; color: var(--text); padding: 8px 10px; font-size: 13px; }
+.account-notes { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.75; }

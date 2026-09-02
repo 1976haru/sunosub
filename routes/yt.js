@@ -13,13 +13,16 @@ import {
   disconnect,
   exchangeCodeForTokens,
   getAccessToken,
+  getAccount,
   hasClientCredentials,
-  isConnected,
   isProbablyExpired,
+  listAccounts,
   readOAuthFile,
   redirectUri,
   rememberChannel,
+  renameAccount,
   saveClientCredentials,
+  setActiveAccount,
   TESTING_REFRESH_TOKEN_DAYS,
   youtubeApi,
 } from '../lib/ytOAuth.js';
@@ -1048,16 +1051,27 @@ router.post('/regenerate', async (req, res, next) => {
  *     10,000 units, so ~190 videos/day — far past this channel's 12/week.
  * ------------------------------------------------------------------ */
 
+/*
+ * TASK CS-v2.4 — 상태 응답이 계정 목록을 통째로 싣는다. refresh token은 절대
+ * 서버 밖으로 내보내지 않는다: 그 행이 실제로 연결돼 있는지는 `hasToken`
+ * 불리언 하나로만 알린다. CLAUDE.md 3.5가 Gemini 키에 그은 선인데, 살아 있는
+ * 채널에 쓰기 권한을 주는 OAuth refresh token은 최소한 그만큼은 지켜야 한다.
+ */
 function oauthStatePayload(port) {
   const file = readOAuthFile();
   return {
     hasClient: hasClientCredentials(),
-    connected: isConnected(),
-    channelTitle: file.channelTitle || '',
-    channelId: file.channelId || '',
-    connectedAt: file.connectedAt || '',
-    connectionAgeDays: connectionAgeDays(),
-    probablyExpired: isProbablyExpired(),
+    activeAccountId: file.activeAccountId || '',
+    accounts: listAccounts().map((account) => ({
+      id: account.id,
+      label: account.label,
+      channelTitle: account.channelTitle || '',
+      channelId: account.channelId || '',
+      connectedAt: account.connectedAt || '',
+      connectionAgeDays: connectionAgeDays(account),
+      probablyExpired: isProbablyExpired(account),
+      hasToken: Boolean(account.refreshToken),
+    })),
     testingTokenDays: TESTING_REFRESH_TOKEN_DAYS,
     redirectUri: redirectUri(port),
     clientIdPreview: file.clientId ? `${String(file.clientId).slice(0, 14)}…` : '',
@@ -1077,9 +1091,34 @@ router.post('/oauth/credentials', (req, res, next) => {
 
 router.get('/oauth/start', (req, res, next) => {
   try {
-    res.redirect(buildAuthUrl(req.socket.localPort));
+    res.redirect(buildAuthUrl(req.socket.localPort, {
+      label: String(req.query.label || ''),
+      reconnectId: String(req.query.reconnect || ''),
+    }));
   } catch (error) { next(error); }
 });
+
+router.post('/oauth/active', (req, res, next) => {
+  try {
+    setActiveAccount(req.body?.accountId);
+    res.json({ ok: true, ...oauthStatePayload(req.socket.localPort) });
+  } catch (error) { next(error); }
+});
+
+router.post('/oauth/rename', (req, res, next) => {
+  try {
+    renameAccount(req.body?.accountId, req.body?.label);
+    res.json({ ok: true, ...oauthStatePayload(req.socket.localPort) });
+  } catch (error) { next(error); }
+});
+
+// 콜백 페이지는 채널 이름·계정 별명을 그대로 HTML에 심는다. 둘 다 사용자가
+// 정하거나 유튜브에서 온 문자열이므로 이스케이프한다.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
 
 /**
  * Google redirects the user's browser here after consent. This renders a plain
@@ -1097,20 +1136,34 @@ setTimeout(function(){window.close();},${ok ? 1800 : 6000});</script></body></ht
 
   try {
     if (req.query.error) throw new Error(`구글에서 권한을 거부했습니다: ${req.query.error}`);
-    if (!consumeState(req.query.state)) throw new Error('요청 검증에 실패했습니다(state 불일치). 연결을 처음부터 다시 시도해 주세요.');
-    await exchangeCodeForTokens(req.query.code, req.socket.localPort);
+    const pending = consumeState(req.query.state);
+    if (!pending) throw new Error('요청 검증에 실패했습니다(state 불일치). 연결을 처음부터 다시 시도해 주세요.');
+    const { accountId } = await exchangeCodeForTokens(req.query.code, req.socket.localPort, pending);
 
     let channelTitle = '';
+    let duplicateOf = null;
     try {
-      const channels = await youtubeApi('channels', { query: { part: 'snippet', mine: 'true' } });
+      const channels = await youtubeApi('channels', { query: { part: 'snippet', mine: 'true' }, accountId });
       const channel = channels?.items?.[0];
       if (channel) {
         channelTitle = channel.snippet?.title || '';
-        rememberChannel({ channelId: channel.id, channelTitle });
+        ({ duplicateOf } = rememberChannel(accountId, { channelId: channel.id, channelTitle }));
       }
     } catch { /* the connection itself succeeded; the channel name is a nicety */ }
 
-    res.send(page('연결되었습니다', `${channelTitle ? `채널: ${channelTitle}<br />` : ''}이 창은 곧 자동으로 닫힙니다.`));
+    // TASK CS-v2.4 — 같은 채널이 두 번 등록되면 사용자는 "일본 채널을 추가했다"고
+    // 믿는데 실제로는 한국 채널이 하나 더 생긴 것이라, 그 행을 골라 등록하면
+    // 한국 채널에 일본어 제목이 올라간다. 조용히 성공으로 보이면 안 된다.
+    if (duplicateOf) {
+      return res.send(page(
+        '이미 등록된 채널입니다',
+        `${escapeHtml(duplicateOf.label)}의 연결을 갱신했습니다.<br />` +
+        '다른 채널을 추가하시려면 구글 계정 선택 화면에서 <b>다른 계정</b>을 골라 주세요.',
+        true
+      ));
+    }
+
+    res.send(page('연결되었습니다', `${channelTitle ? `채널: ${escapeHtml(channelTitle)}<br />` : ''}이 창은 곧 자동으로 닫힙니다.`));
   } catch (error) {
     res.status(400).send(page('연결하지 못했습니다', String(error.message || error), false));
   }
@@ -1118,19 +1171,20 @@ setTimeout(function(){window.close();},${ok ? 1800 : 6000});</script></body></ht
 
 router.post('/oauth/disconnect', (req, res, next) => {
   try {
-    disconnect();
-    res.json({ ok: true, ...oauthStatePayload(req.socket.localPort) });
+    const { removed, activeAccountId } = disconnect(req.body?.accountId);
+    res.json({ ok: true, removed, activeAccountId, ...oauthStatePayload(req.socket.localPort) });
   } catch (error) { next(error); }
 });
 
 /** The authorized account's own uploads — so the user picks a video instead of pasting an ID. */
 router.get('/my-videos', async (req, res, next) => {
   try {
-    const channels = await youtubeApi('channels', { query: { part: 'contentDetails,snippet', mine: 'true' } });
+    const account = getAccount(req.query.accountId);
+    const channels = await youtubeApi('channels', { query: { part: 'contentDetails,snippet', mine: 'true' }, accountId: account.id });
     const channel = channels?.items?.[0];
     const uploadsId = channel?.contentDetails?.relatedPlaylists?.uploads;
     if (!uploadsId) throw Object.assign(new Error('연결된 계정에서 채널을 찾지 못했습니다.'), { status: 404 });
-    rememberChannel({ channelId: channel.id, channelTitle: channel.snippet?.title });
+    rememberChannel(account.id, { channelId: channel.id, channelTitle: channel.snippet?.title });
 
     const items = await youtubeApi('playlistItems', {
       query: {
@@ -1139,8 +1193,11 @@ router.get('/my-videos', async (req, res, next) => {
         maxResults: Math.min(50, Math.max(1, Number(req.query.maxResults) || 25)),
         pageToken: req.query.pageToken || '',
       },
+      accountId: account.id,
     });
     res.json({
+      accountId: account.id,
+      accountLabel: account.label,
       channelTitle: channel.snippet?.title || '',
       nextPageToken: items.nextPageToken || '',
       videos: (items.items || []).map((item) => ({
@@ -1165,7 +1222,8 @@ router.get('/localizations', async (req, res, next) => {
   try {
     const videoId = extractVideoId(String(req.query.videoId || ''));
     if (!videoId) throw Object.assign(new Error('영상 ID를 확인하지 못했습니다.'), { status: 400 });
-    const data = await youtubeApi('videos', { query: { part: 'snippet,localizations', id: videoId } });
+    const account = getAccount(req.query.accountId);
+    const data = await youtubeApi('videos', { query: { part: 'snippet,localizations', id: videoId }, accountId: account.id });
     const video = data?.items?.[0];
     if (!video) throw Object.assign(new Error('영상을 찾지 못했습니다.'), { status: 404 });
     res.json({
@@ -1193,18 +1251,23 @@ router.post('/publish-localizations', async (req, res, next) => {
     const translations = Array.isArray(req.body?.translations) ? req.body.translations : [];
     if (!translations.length) throw Object.assign(new Error('등록할 번역 결과가 없습니다.'), { status: 400 });
 
-    const accessToken = await getAccessToken();
+    const account = getAccount(req.body?.accountId);
+    const accessToken = await getAccessToken(account.id);
     const supported = await fetchSupportedLanguages({ accessToken });
     const { planned, skipped } = planLocalizations(translations, supported);
 
-    const listed = await youtubeApi('videos', { query: { part: 'snippet,localizations', id: videoId } });
+    const listed = await youtubeApi('videos', { query: { part: 'snippet,localizations', id: videoId }, accountId: account.id });
     const video = listed?.items?.[0];
     if (!video) throw Object.assign(new Error('영상을 찾지 못했습니다. 비공개/삭제된 영상이거나 ID가 틀렸을 수 있습니다.'), { status: 404 });
 
-    const myChannelId = readOAuthFile().channelId;
+    // TASK CS-v2.4 — 소유권 검사는 이제 "선택한 계정"의 채널과 대조한다. 계정이
+    // 하나뿐이던 v1.6에서는 거의 형식적인 검사였지만, 다계정에서는 계정을 잘못
+    // 고르는 일이 실제로 일어난다 — 그리고 그 결과가 내 다른 채널에 대한 잘못된
+    // 쓰기다. 그래서 고칠 방법("계정을 바꾸세요")이 메시지에서 바로 보여야 한다.
+    const myChannelId = account.channelId;
     if (myChannelId && video.snippet?.channelId && video.snippet.channelId !== myChannelId) {
       throw Object.assign(
-        new Error('연결된 계정의 채널 영상이 아닙니다. 본인 채널에 올린 영상만 번역을 등록할 수 있습니다.'),
+        new Error(`선택한 계정 "${account.label}"의 채널 영상이 아닙니다. 계정 목록에서 이 영상이 올라간 채널을 고른 뒤 다시 시도해 주세요.`),
         { status: 403 }
       );
     }
@@ -1246,6 +1309,8 @@ router.post('/publish-localizations', async (req, res, next) => {
     if (dryRun) {
       return res.json({
         dryRun: true,
+        accountId: account.id,
+        accountLabel: account.label,
         videoId,
         videoTitle: video.snippet?.title || '',
         currentDefaultLanguage: video.snippet?.defaultLanguage || '',
@@ -1273,10 +1338,13 @@ router.post('/publish-localizations', async (req, res, next) => {
       method: 'PUT',
       query: { part: 'snippet,localizations' },
       body: { id: videoId, snippet, localizations },
+      accountId: account.id,
     });
 
     res.json({
       ok: true,
+      accountId: account.id,
+      accountLabel: account.label,
       videoId,
       videoTitle: updated?.snippet?.title || video.snippet?.title || '',
       defaultLanguage,

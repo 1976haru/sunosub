@@ -22,7 +22,7 @@
 | 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
 | 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
 
-현재 버전: **CS-v2.3**
+현재 버전: **CS-v2.4**
 
 ---
 
@@ -186,7 +186,43 @@ videos.list(part=snippet,localizations)
 - 동의 화면이 "테스트" 상태면 구글이 **7일마다 refresh token을 만료**시킵니다. 숨기지
   말고 UI에 경과일 배지와 `invalid_grant` 전용 안내로 표면화하세요(`lib/ytOAuth.js`).
 - 쿼터: `videos.update` 1회 = **50유닛**, 기본 일일 10,000유닛. 언어를 몇 개 올리든
-  영상 1편당 50유닛입니다.
+  영상 1편당 50유닛입니다. **이 한도는 계정별이 아니라 OAuth 클라이언트가 속한 구글 클라우드
+  프로젝트 전체**에 걸립니다 — 소진되면 계정을 바꿔도 소용없고, 그 사실이 오류 문구에 있어야
+  사용자가 계정을 하나씩 바꿔 보며 헤매지 않습니다.
+
+### 4.4.1 계정 다중 등록 (CS-v2.4)
+
+`.yt_oauth.json`은 `{ clientId, clientSecret, accounts: [...], activeAccountId }`입니다.
+`accounts[]` 각 항목은 `{ id, label, refreshToken, channelId, channelTitle, connectedAt }`.
+
+**구조상 핵심 — 이걸 놓치면 설계가 틀어집니다: OAuth 클라이언트(clientId + clientSecret =
+구글 클라우드 프로젝트)는 모든 계정이 공유하고, refresh token만 계정별입니다.** 그래서 Cloud
+Console 설정은 채널을 몇 개 늘리든 최초 1회로 끝나고, 계정마다 반복되는 것은 구글 동의
+절차뿐입니다. 계정 추가 화면에서 클라이언트 ID를 다시 묻지 마세요.
+
+- 계정 id는 채널 id가 아니라 생성된 랜덤 값(`acc_` + hex)입니다. 동의가 끝나기 전에는 어느
+  채널인지 알 수 없는데 행은 먼저 있어야 하기 때문입니다(라벨을 구글 왕복 너머로 실어 나르는
+  것이 그 행입니다).
+- v1.6 형식(최상위 `refreshToken`)은 `readOAuthFile()`이 읽을 때 `accounts[0]`으로 자동
+  이관하고 최상위 키를 지웁니다. **이 마이그레이션을 지우지 마세요** — 사용자 PC에는 이미 살아
+  있는 연결이 들어 있고, 날리면 데이터 손실로 보입니다.
+- **`buildAuthUrl()`의 `prompt`는 `consent select_account`입니다. `select_account`를 빼면
+  기능이 통째로 무의미해집니다.** 구글이 브라우저에 이미 로그인된 계정을 그대로 재사용해서,
+  [계정 추가]를 눌러도 같은 채널만 다시 연결되고 화면에는 고장난 것처럼 보입니다.
+- **같은 채널 중복 등록 방어**(`rememberChannel()`): 같은 `channelId`를 가진 다른 행이 있으면
+  새 행을 지우고 기존 행의 토큰만 갱신한 뒤 `duplicateOf`를 돌려줍니다. 콜백 화면은 그걸 받아
+  "이미 등록된 채널입니다 — OO의 연결을 갱신했습니다"라고 알립니다. 안 막으면 사용자가 "일본
+  채널"이라 믿는 행이 실제로는 한국 채널이어서 **한국 채널에 일본어 제목이 올라갑니다.**
+- `accessTokenCache`는 계정별 `Map`입니다. 단일 변수로 되돌리지 마세요 — A계정용 토큰이
+  B계정 요청에 재사용되어 엉뚱한 채널에 쓰게 됩니다.
+- 소유권 검사는 **선택한 계정의 `channelId`** 와 대조하고, 오류 메시지에 계정 별명과 고칠
+  방법을 넣습니다. 다계정이 되면서 계정을 잘못 고르는 일이 실제로 가능해졌습니다.
+- **API 응답에 `refreshToken`을 넣지 마세요.** 연결 여부는 `hasToken: Boolean(...)` 불리언으로만
+  노출합니다(3.5와 같은 이유).
+- 프론트엔드에서 계정을 전환하면 **이전 계정의 영상 목록과 미리본 계획을 반드시 무효화**합니다
+  (`tools/yt/app.js`의 `invalidateAccountScopedState()`). 안 그러면 A계정에서 고른 영상 ID로
+  B계정에 등록을 시도하게 됩니다. 계정 행은 다시 그려지므로 개별 버튼에 리스너를 달지 말고
+  `#accountList`에 이벤트를 위임하세요.
 
 ### 4.5 언어 코드 해석
 

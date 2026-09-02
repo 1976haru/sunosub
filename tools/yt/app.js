@@ -1127,29 +1127,112 @@ loadModelList();
  * or drop a language, so the user sees exactly what will land before it does.
  * ------------------------------------------------------------------ */
 
-const publishState = { oauth: null, plan: null };
+// TASK CS-v2.4 — renamingId는 "지금 이름을 고치는 중인 행"이다. 계정 행은
+// 상태가 바뀔 때마다 통째로 다시 그려지므로, 편집 중인지 여부도 상태로 갖고
+// 있어야 다시 그릴 때 입력칸이 사라지지 않는다.
+const publishState = { oauth: null, plan: null, renamingId: '' };
+
+function activeAccount() {
+  const status = publishState.oauth;
+  if (!status) return null;
+  return (status.accounts || []).find((account) => account.id === status.activeAccountId) || null;
+}
+
+/*
+ * TASK CS-v2.4 — 계정을 바꾸면 이전 계정에서 불러온 것들은 전부 무효다.
+ * 특히 미리본 계획(publishState.plan)을 남겨 두면, A계정에서 고른 영상 ID로
+ * B계정에 등록을 시도하게 된다 — 그건 남의 채널에 대한 쓰기 실패이거나(운이
+ * 좋으면) 소유권 검사에 걸리는 403이다. 목록·계획·버튼을 같이 비운다.
+ */
+function invalidateAccountScopedState() {
+  const select = $('myVideoSelect');
+  select.innerHTML = '';
+  select.classList.add('hidden');
+  publishState.plan = null;
+  $('applyPublishBtn').disabled = true;
+  $('publishReport').classList.add('hidden');
+  $('publishVerify').classList.add('hidden');
+}
+
+function accountRowHtml(account, activeId) {
+  const id = escapeHtml(account.id);
+  if (publishState.renamingId === account.id) {
+    return `<div class="account-row${account.id === activeId ? ' active' : ''}" data-id="${id}">
+      <span class="account-dot"></span>
+      <span class="account-rename">
+        <input class="account-rename-input" type="text" value="${escapeHtml(account.label)}" data-id="${id}" />
+      </span>
+      <span class="account-actions">
+        <button class="mini-btn" data-action="rename-save" data-id="${id}">저장</button>
+        <button class="mini-btn" data-action="rename-cancel" data-id="${id}">취소</button>
+      </span>
+    </div>`;
+  }
+
+  const meta = [];
+  meta.push(account.channelTitle ? `채널: ${escapeHtml(account.channelTitle)}` : '채널 미확인');
+  if (!account.hasToken) {
+    meta.push('<span class="bad">연결 안 됨 — [재연결] 필요</span>');
+  } else if (account.connectionAgeDays !== null && account.connectionAgeDays !== undefined) {
+    meta.push(`${account.connectionAgeDays}일 전 연결`);
+  }
+  if (account.hasToken && account.probablyExpired) {
+    meta.push(`<span class="warn">${publishState.oauth?.testingTokenDays ?? 7}일 만료 가능 · 재연결 권장</span>`);
+  }
+
+  return `<div class="account-row${account.id === activeId ? ' active' : ''}" data-id="${id}" data-action="activate">
+    <span class="account-dot"></span>
+    <span class="account-main">
+      <span class="account-label">${escapeHtml(account.label)}${account.id === activeId ? ' · 선택됨' : ''}</span>
+      <div class="account-meta">${meta.join(' · ')}</div>
+    </span>
+    <span class="account-actions">
+      <button class="mini-btn" data-action="rename" data-id="${id}">이름</button>
+      <button class="mini-btn" data-action="reconnect" data-id="${id}">재연결</button>
+      <button class="mini-btn" data-action="delete" data-id="${id}">삭제</button>
+    </span>
+  </div>`;
+}
+
+function renderAccounts() {
+  const status = publishState.oauth;
+  const box = $('accountList');
+  if (!status) { box.innerHTML = ''; return; }
+  const accounts = status.accounts || [];
+  if (!accounts.length) {
+    box.innerHTML = '<p class="account-empty">등록된 계정이 없습니다. 위에 별명을 적고 [＋ 계정 추가]를 눌러 주세요.</p>';
+    return;
+  }
+  box.innerHTML = accounts.map((account) => accountRowHtml(account, status.activeAccountId)).join('');
+}
 
 async function loadOAuthStatus() {
   try {
     const status = await api('/api/yt/oauth/status');
+    const previousActive = publishState.oauth?.activeAccountId;
     publishState.oauth = status;
     $('redirectUriBox').textContent = status.redirectUri;
     if (status.clientIdPreview && !$('clientIdInput').value) $('clientIdInput').placeholder = status.clientIdPreview;
 
     const badges = [];
     badges.push(`<span class="badge ${status.hasClient ? 'ok' : 'warn'}">OAuth 클라이언트 ${status.hasClient ? '설정됨' : '필요'}</span>`);
-    if (status.connected) {
-      const expiring = status.probablyExpired;
-      badges.push(`<span class="badge ${expiring ? 'warn' : 'ok'}">${escapeHtml(status.channelTitle || '연결됨')}${
-        status.connectionAgeDays !== null ? ` · ${status.connectionAgeDays}일 전 연결` : ''}</span>`);
-      if (expiring) {
+    const active = activeAccount();
+    if (active) {
+      const expiring = active.probablyExpired || !active.hasToken;
+      badges.push(`<span class="badge ${expiring ? 'warn' : 'ok'}">선택: ${escapeHtml(active.label)}${
+        active.channelTitle && active.channelTitle !== active.label ? ` (${escapeHtml(active.channelTitle)})` : ''}</span>`);
+      if (active.probablyExpired) {
         badges.push(`<span class="badge warn">${status.testingTokenDays}일 만료 가능 · 재연결 권장</span>`);
       }
     } else {
-      badges.push('<span class="badge warn">계정 미연결</span>');
+      badges.push(`<span class="badge warn">계정 ${(status.accounts || []).length ? '미선택' : '없음'}</span>`);
     }
     $('oauthBadges').innerHTML = badges.join('');
+    renderAccounts();
     if (!status.hasClient) $('oauthSetup').open = true;
+    // 서버 쪽에서 활성 계정이 바뀐 경우(예: 활성 계정을 지워 자동 전환)에도
+    // 이전 계정 기준으로 불러온 목록·계획은 버린다.
+    if (previousActive && previousActive !== status.activeAccountId) invalidateAccountScopedState();
   } catch (error) {
     $('oauthBadges').innerHTML = '<span class="badge warn">연결 상태 확인 실패</span>';
   }
@@ -1166,33 +1249,106 @@ async function saveOAuthClient() {
       }),
     });
     $('clientSecretInput').value = '';
-    showToast('클라이언트 정보를 저장했습니다. 이제 [유튜브 계정 연결]을 눌러 주세요.');
+    showToast('클라이언트 정보를 저장했습니다. 이제 [＋ 계정 추가]를 눌러 주세요.');
     await loadOAuthStatus();
   } catch (error) {
     setError('publishError', error.message);
   }
 }
 
-function connectYoutube() {
+function openConsentPopup({ label = '', reconnectId = '' } = {}) {
   if (!publishState.oauth?.hasClient) {
     $('oauthSetup').open = true;
     return setError('publishError', '먼저 구글 OAuth 클라이언트 ID와 보안 비밀번호를 저장해 주세요.');
   }
   setError('publishError');
+  const query = new URLSearchParams();
+  if (label) query.set('label', label);
+  if (reconnectId) query.set('reconnect', reconnectId);
   // A popup, not a redirect: this tool runs inside the Creator Studio shell's
   // iframe and would otherwise navigate the whole app away to Google.
-  window.open('/api/yt/oauth/start', 'creator-studio-yt-oauth', 'width=520,height=680');
+  window.open(`/api/yt/oauth/start?${query.toString()}`, 'creator-studio-yt-oauth', 'width=520,height=680');
 }
 
-async function disconnectYoutube() {
+function addAccount() {
+  const label = $('newAccountLabel').value.trim();
+  openConsentPopup({ label });
+  $('newAccountLabel').value = '';
+  showToast('구글 계정 선택 화면에서 반드시 "다른 계정"을 골라 주세요.');
+}
+
+async function switchAccount(accountId) {
+  if (!accountId || accountId === publishState.oauth?.activeAccountId) return;
+  setError('publishError');
   try {
-    await api('/api/yt/oauth/disconnect', { method: 'POST' });
-    $('myVideoSelect').classList.add('hidden');
-    showToast('연결을 해제했습니다.');
+    await api('/api/yt/oauth/active', { method: 'POST', body: JSON.stringify({ accountId }) });
+    // 상태를 다시 읽기 전에 먼저 비운다: 화면에 이전 계정의 영상 목록이
+    // 한 순간이라도 선택 가능한 채로 남아 있으면 안 된다.
+    invalidateAccountScopedState();
     await loadOAuthStatus();
+    showToast(`선택한 계정: ${activeAccount()?.label || accountId}`);
   } catch (error) {
     setError('publishError', error.message);
   }
+}
+
+async function saveAccountLabel(accountId, label) {
+  setError('publishError');
+  try {
+    await api('/api/yt/oauth/rename', { method: 'POST', body: JSON.stringify({ accountId, label }) });
+    publishState.renamingId = '';
+    await loadOAuthStatus();
+    showToast('별명을 바꿨습니다.');
+  } catch (error) {
+    setError('publishError', error.message);
+  }
+}
+
+async function deleteAccount(accountId) {
+  const account = (publishState.oauth?.accounts || []).find((row) => row.id === accountId);
+  if (!window.confirm(`"${account?.label || accountId}" 계정을 목록에서 지웁니다. 유튜브 영상에는 아무 영향이 없고, 다시 쓰려면 구글 동의를 다시 받아야 합니다. 계속할까요?`)) return;
+  setError('publishError');
+  try {
+    const data = await api('/api/yt/oauth/disconnect', { method: 'POST', body: JSON.stringify({ accountId }) });
+    invalidateAccountScopedState();
+    await loadOAuthStatus();
+    const next = (data.accounts || []).find((row) => row.id === data.activeAccountId);
+    showToast(next ? `계정을 지웠습니다. 선택한 계정: ${next.label}` : '계정을 지웠습니다. 남은 계정이 없습니다.');
+  } catch (error) {
+    setError('publishError', error.message);
+  }
+}
+
+/*
+ * TASK CS-v2.4 — 행은 상태가 바뀔 때마다 통째로 다시 그려진다. 그래서 개별
+ * 버튼에 리스너를 달면 다시 그리는 순간 전부 끊어진다. 목록 컨테이너 하나에만
+ * 위임하고, 어떤 동작인지는 data-action으로 판별한다.
+ */
+function handleAccountListClick(event) {
+  const button = event.target.closest('button[data-action]');
+  const row = event.target.closest('.account-row');
+  if (!row) return;
+  const accountId = button?.dataset.id || row.dataset.id;
+
+  if (button) {
+    event.stopPropagation();
+    const action = button.dataset.action;
+    if (action === 'rename') { publishState.renamingId = accountId; renderAccounts(); $('accountList').querySelector('.account-rename-input')?.focus(); return; }
+    if (action === 'rename-cancel') { publishState.renamingId = ''; renderAccounts(); return; }
+    if (action === 'rename-save') {
+      const input = row.querySelector('.account-rename-input');
+      return saveAccountLabel(accountId, input ? input.value : '');
+    }
+    if (action === 'reconnect') {
+      const account = (publishState.oauth?.accounts || []).find((item) => item.id === accountId);
+      return openConsentPopup({ reconnectId: accountId, label: account?.label || '' });
+    }
+    if (action === 'delete') return deleteAccount(accountId);
+    return;
+  }
+
+  if (publishState.renamingId === accountId) return; // 편집 중인 행은 클릭으로 전환하지 않는다
+  switchAccount(accountId);
 }
 
 async function loadMyVideos() {
@@ -1200,16 +1356,17 @@ async function loadMyVideos() {
   const button = $('refreshVideosBtn');
   button.disabled = true;
   try {
-    const data = await api('/api/yt/my-videos?maxResults=50');
+    const accountId = publishState.oauth?.activeAccountId || '';
+    const data = await api(`/api/yt/my-videos?maxResults=50&accountId=${encodeURIComponent(accountId)}`);
     const select = $('myVideoSelect');
     if (!data.videos.length) {
       select.classList.add('hidden');
-      return setError('publishError', '채널에서 영상을 찾지 못했습니다.');
+      return setError('publishError', `"${data.accountLabel || '선택한 계정'}" 채널에서 영상을 찾지 못했습니다.`);
     }
-    select.innerHTML = '<option value="">— 내 영상에서 고르기 —</option>' + data.videos.map((video) =>
+    select.innerHTML = `<option value="">— ${escapeHtml(data.accountLabel || '내 영상')}에서 고르기 —</option>` + data.videos.map((video) =>
       `<option value="${escapeHtml(video.videoId)}">${escapeHtml(video.title)}</option>`).join('');
     select.classList.remove('hidden');
-    showToast(`${data.videos.length}개 영상을 불러왔습니다.`);
+    showToast(`${escapeHtml(data.accountLabel || '')} · ${data.videos.length}개 영상을 불러왔습니다.`);
   } catch (error) {
     setError('publishError', error.message);
   } finally {
@@ -1247,7 +1404,7 @@ function renderPublishReport(data, applied) {
   const parts = [];
 
   parts.push(`<h4>${applied ? '등록 완료' : '미리보기 — 아직 아무것도 등록되지 않았습니다'}</h4>`);
-  parts.push(`<p>영상: <strong>${escapeHtml(data.videoTitle || data.videoId)}</strong> · 원문 언어 <code>${escapeHtml(data.defaultLanguage)}</code>` +
+  parts.push(`<p>계정: <strong>${escapeHtml(data.accountLabel || '')}</strong> · 영상: <strong>${escapeHtml(data.videoTitle || data.videoId)}</strong> · 원문 언어 <code>${escapeHtml(data.defaultLanguage)}</code>` +
     (applied ? ` · 현재 등록된 언어 ${data.totalLocalizations}개` : '') + '</p>');
 
   if (data.problems?.length) {
@@ -1285,19 +1442,25 @@ async function previewPublish() {
   if (!translations.length) return setError('publishError', '먼저 위에서 번역을 실행해 주세요. 등록할 번역 결과가 없습니다.');
   const videoId = $('publishVideoId').value.trim() || $('myVideoSelect').value;
   if (!videoId) return setError('publishError', '대상 영상 URL 또는 ID를 입력해 주세요.');
+  const accountId = publishState.oauth?.activeAccountId || '';
+  if (!accountId) return setError('publishError', '먼저 유튜브 계정을 추가하고 등록할 계정을 골라 주세요.');
 
   $('previewPublishBtn').disabled = true;
   try {
     const data = await api('/api/yt/publish-localizations', {
       method: 'POST',
       body: JSON.stringify({
+        accountId,
         videoId,
         defaultLanguage: $('defaultLanguageSelect').value,
         translations,
         dryRun: true,
       }),
     });
-    publishState.plan = { videoId, defaultLanguage: data.defaultLanguage, translations };
+    // TASK CS-v2.4 — 계획에 accountId를 넣어 둔다(4.1). 적용은 미리본 계획
+    // 그대로만 나가야 하므로, 그 사이에 활성 계정이 바뀌었더라도 미리본
+    // 계정으로 등록된다.
+    publishState.plan = { accountId, videoId, defaultLanguage: data.defaultLanguage, translations };
     renderPublishReport(data, false);
     $('applyPublishBtn').disabled = !data.planned?.length || Boolean(data.problems?.length);
   } catch (error) {
@@ -1367,7 +1530,7 @@ async function applyPublish() {
 
     // TASK CS-v2.0 작업 B 요구사항 1 — 등록 응답(보낸 개수) 말고, 되읽은 값이 진짜다.
     try {
-      const verify = await api(`/api/yt/localizations?videoId=${encodeURIComponent(data.videoId)}`);
+      const verify = await api(`/api/yt/localizations?videoId=${encodeURIComponent(data.videoId)}&accountId=${encodeURIComponent(publishState.plan?.accountId || '')}`);
       renderPublishVerification(data.published || [], verify);
     } catch (verifyError) {
       $('publishVerify').innerHTML = `<p class="bad">등록 후 확인 조회 실패: ${escapeHtml(verifyError.message)} — YouTube Studio에서 직접 확인해 주세요.</p>`;
@@ -1383,8 +1546,13 @@ async function applyPublish() {
 
 function setupPublishEvents() {
   $('saveClientBtn').addEventListener('click', saveOAuthClient);
-  $('connectYoutubeBtn').addEventListener('click', connectYoutube);
-  $('disconnectYoutubeBtn').addEventListener('click', disconnectYoutube);
+  $('addAccountBtn').addEventListener('click', addAccount);
+  $('newAccountLabel').addEventListener('keydown', (event) => { if (event.key === 'Enter') addAccount(); });
+  $('accountList').addEventListener('click', handleAccountListClick);
+  $('accountList').addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || !event.target.classList.contains('account-rename-input')) return;
+    saveAccountLabel(event.target.dataset.id, event.target.value);
+  });
   $('refreshVideosBtn').addEventListener('click', loadMyVideos);
   $('previewPublishBtn').addEventListener('click', previewPublish);
   $('applyPublishBtn').addEventListener('click', applyPublish);

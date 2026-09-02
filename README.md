@@ -120,13 +120,37 @@ creator-studio/
   `벚꽃 언덕 (벚꽃 언덕)` 같은 중복이 생기지 않습니다. AI 채우기는 곡 목록 전체를 한 번의 Gemini 호출로
   처리하며, 응답을 순서가 아니라 `index` 키로 되돌려 매핑해 짧거나 뒤섞인 응답이 와도 제목이 다른 곡에
   밀려 들어가지 않습니다.
-- **유튜브 번역 자동 등록 (CS-v1.6, `lib/ytOAuth.js` + `lib/ytLanguages.js` + `/api/yt/oauth/*`,
+- **유튜브 번역 자동 등록 (CS-v1.6, 다계정은 CS-v2.4, `lib/ytOAuth.js` + `lib/ytLanguages.js` + `/api/yt/oauth/*`,
   `/api/yt/publish-localizations`)**: 번역기 결과를 유튜브 영상의 `localizations`(언어별 제목·설명)로
   직접 올립니다. 유튜브가 번역해 주는 기능이 아니라, 시청자의 유튜브 언어 설정에 맞춰 우리가 올린
   번역문을 보여 주는 기능입니다. 구현상 주의점:
   - **쓰기라서 API 키로는 안 됩니다.** OAuth 2.0(`youtube.force-ssl`)이 필요하고, 클라이언트 ID/보안
     비밀번호와 refresh token은 `.yt_oauth.json`(mode 600, gitignore)에만 저장됩니다. 리디렉션 URI는
     이 서버 자신(`http://localhost:5300/api/yt/oauth/callback`)이며 UI에 복사 버튼과 함께 표시됩니다.
+  - **계정을 여러 개 등록해 두고 골라 씁니다 (CS-v2.4).** 채널이 늘고(한국 올드팝·일본 쇼와 카페·추가 예정)
+    아내도 같은 도구를 쓰기 때문에, 매번 연결을 끊고 다시 잇지 않아도 되도록 계정 목록을 둡니다. 구조상 핵심은
+    이것이고, 나머지 설계가 전부 여기서 나옵니다:
+    - **OAuth 클라이언트(clientId + clientSecret = 구글 클라우드 프로젝트)는 모든 계정이 공유하고,
+      refresh token만 계정별입니다.** 그래서 Cloud Console 설정은 채널을 몇 개 늘리든 최초 1회로 끝나고,
+      계정마다 반복되는 것은 구글 동의 절차뿐입니다. 계정 추가 화면에서 클라이언트 ID를 다시 묻지 않습니다.
+    - 파일 형식은 `{ clientId, clientSecret, accounts: [...], activeAccountId }`이고, 계정 id는 채널 id가
+      아니라 생성된 랜덤 값(`acc_` + hex)입니다 — 동의가 끝나기 전에는 어느 채널인지 알 수 없는데 행은 먼저
+      있어야 하기 때문입니다(라벨을 구글 왕복 너머로 실어 나르는 것이 그 행입니다). v1.6 형식(최상위
+      `refreshToken`)은 읽을 때 `accounts[0]`으로 자동 이관되고 최상위 키는 제거됩니다.
+    - **동의 URL의 `prompt`는 `consent select_account`입니다. `select_account`가 없으면 기능이 통째로
+      무의미해집니다** — 구글이 브라우저에 이미 로그인된 계정을 그대로 재사용해서, [계정 추가]를 눌러도 같은
+      채널만 다시 연결되고 사용자 눈에는 고장으로 보입니다.
+    - **같은 채널 중복 등록 방어**: `rememberChannel()`이 같은 `channelId`를 가진 다른 행을 발견하면 새 행을
+      지우고 기존 행의 토큰만 갱신한 뒤, 어느 계정과 겹쳤는지 콜백 화면에 알립니다. 이걸 막지 않으면 사용자가
+      "일본 채널을 추가했다"고 믿는 행이 실제로는 한국 채널이어서, **한국 채널에 일본어 제목이 올라갑니다.**
+    - 소유권 검사는 `readOAuthFile().channelId`가 아니라 **선택한 계정의 `channelId`** 와 대조하고, 오류
+      메시지에 계정 별명과 고칠 방법("계정 목록에서 이 영상이 올라간 채널을 고르라")을 넣습니다.
+    - `accessTokenCache`는 계정별 `Map`입니다. 단일 변수로 두면 A계정용으로 받아 둔 토큰이 B계정 요청에
+      재사용되어 엉뚱한 채널에 쓰게 됩니다.
+    - **쿼터는 계정별이 아니라 클라우드 프로젝트 전체에 걸립니다.** 소진 시 계정을 바꿔도 소용없다는 점을
+      `quotaExceeded` 메시지에 적어 둡니다(안 그러면 계정을 하나씩 바꿔 보다가 앱이 고장났다고 판단합니다).
+    - 새 구글 계정(예: 아내 계정)은 Cloud Console의 [OAuth 동의 화면 > 테스트 사용자]에도 추가해야 로그인됩니다.
+    - API 응답에는 `refreshToken`을 절대 싣지 않습니다. 연결 여부는 `hasToken` 불리언으로만 노출합니다.
   - **`videos.update`는 지정한 part를 통째로 교체합니다.** 값이 있는 속성을 빼고 보내면 그 값이
     삭제되므로, 등록 경로는 항상 `videos.list` → 기존 title/description/categoryId/tags/기존
     localizations 보존 → 병합 → `PUT`의 read-modify-write입니다.
@@ -138,7 +162,7 @@ creator-studio/
   - 미리보기(`dryRun`) → 적용 2단계이며, 적용은 미리본 계획 그대로만 전송합니다. 연결 계정의 채널
     영상이 아니면 쓰기 전에 막습니다.
   - **동의 화면이 "테스트" 상태면 구글이 7일마다 refresh token을 만료시킵니다.** 숨기지 않고
-    연결 경과일 배지와 `invalid_grant` 전용 안내 문구로 표면화합니다. 쿼터는 `videos.update` 1회당
+    계정 행마다 연결 경과일과 만료 경고를 띄우고, `invalid_grant` 안내에는 어느 계정인지 별명을 넣습니다. 쿼터는 `videos.update` 1회당
     50유닛(기본 일일 10,000유닛)이라 언어를 몇 개 올리든 영상 1편당 50유닛입니다.
 - Gemini 키는 서버가 `.gemini_key` 파일 또는 `GEMINI_API_KEY` 환경변수에서 읽어 4개 도구가 공유합니다.
   키 값은 API 응답이나 로그에 노출하지 않습니다.
