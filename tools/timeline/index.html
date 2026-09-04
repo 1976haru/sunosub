@@ -321,6 +321,7 @@
 
       <div id="renamePreview" class="hidden">
         <p class="small">⚠️ 아직 아무것도 바뀌지 않았습니다. 아래 미리보기를 확인한 뒤 [적용]을 눌러야 실제 파일명이 바뀝니다.</p>
+        <p id="bracketRenameWarn" class="status hidden"></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th style="width:90px">상태</th><th>변경 전</th><th>변경 후</th></tr></thead>
@@ -400,6 +401,81 @@
     return title.trim() || filename;
   }
 
+  /* ---------------------------------------------------------------- *
+   * TASK CS-v2.5 — 파일명에 이미 구워져 있는 괄호 제목 분리
+   *
+   * 실제 운영 파일명이 "01. Run Past the Gate (교문밖그날).wav" 형태라서
+   * track.title이 괄호까지 통째로 삼켜 버렸고, 그러면 CS-v1.6의 [괄호 제목
+   * 표기] 드롭다운을 "사용 안 함"으로 놔도 괄호가 출력에 남아 옵션이 무력해진다.
+   * 불러오는 시점에 한 번 떼어내서 titleKo / titleJa로 옮겨 두면 기존 드롭다운이
+   * 그대로 동작한다.
+   *
+   * 분리 여부 판정을 "(Live)/(Remix)/(feat. ...)" 같은 영어 음악 용어 목록으로
+   * 만들지 않은 이유: 목록은 반드시 샌다. 이 도구의 괄호 제목은 언제나 한국어
+   * 아니면 일본어이므로 "괄호 안에 한글·가나·한자가 하나라도 있는가"가 목록보다
+   * 정확하고 유지보수가 필요 없다. 덤으로 윈도우가 중복 다운로드에 붙이는
+   * "(1)" "(2)"도 같은 규칙 하나로 걸러진다.
+   * ---------------------------------------------------------------- */
+  const HANGUL_RE = /[\uAC00-\uD7A3]/;
+  const KANA_RE = /[\u3040-\u309F\u30A0-\u30FF]/;
+  const HAN_RE = /[\u3400-\u4DBF\u4E00-\u9FFF]/;
+  // 맨 끝의 괄호 한 쌍만. "Rock (Live) at Dawn"처럼 제목 중간에 있는 괄호는
+  // $ 앵커 때문에 애초에 걸리지 않는다. 전각 괄호도 받는다 — 일본어 파일명이
+  // "（昭和カフェ）"로 오는 경우가 실제로 있다.
+  const TRAILING_BRACKET_RE = /^(.*?)\s*[(\uFF08]([^()\uFF08\uFF09]+)[)\uFF09]\s*$/;
+
+  function hasCjkText(text) {
+    return HANGUL_RE.test(text) || KANA_RE.test(text) || HAN_RE.test(text);
+  }
+
+  /**
+   * "01. Sakura Hill (벚꽃 언덕 / 桜の丘)"
+   *   → { title: "01. Sakura Hill", titleKo: "벚꽃 언덕", titleJa: "桜の丘", split: true }
+   *
+   * 분리하지 않는 경우(괄호 없음 / 괄호 안에 한글·일본어가 없음 / 본문이 비게 되는
+   * 경우)에는 원문을 그대로 title에 두고 split: false를 돌려준다.
+   */
+  function splitBracketTitle(text) {
+    const source = String(text || "");
+    const none = { title: source, titleKo: "", titleJa: "", split: false };
+    const m = source.match(TRAILING_BRACKET_RE);
+    if (!m) return none;
+    const base = m[1].trim();
+    const inner = m[2].trim();
+    // 본문이 통째로 사라지는 "(교문밖그날).wav" 같은 경우는 분리하지 않는다.
+    if (!base || !inner) return none;
+    if (!hasCjkText(inner)) return none;
+
+    // "한국어 / 日本語"처럼 슬래시로 둘 다 들어있는 경우에만 쪼갠다. 조각 중
+    // 하나라도 한글·일본어가 없으면(예: "Live / 昭和") 쪼개면 그 조각이 버려지므로
+    // 통째로 한 덩어리로 본다. 전각 슬래시도 받는다 — 윈도우 파일명에는 "/"를 쓸 수
+    // 없어서 실제 파일은 "(벚꽃 언덕 ／ 桜の丘).wav"로 내려온다.
+    let segments = inner.split(/[\/\uFF0F]/).map((part) => part.trim()).filter(Boolean);
+    if (segments.length < 2 || !segments.every(hasCjkText)) segments = [inner];
+
+    const ko = [];
+    const ja = [];
+    for (const segment of segments) {
+      // 가나가 있으면 일본어. 한글과 가나가 섞여 있어도 일본어로 본다(일본 채널
+      // 제목에 한자·가나가 섞이므로). 한자만 있는 경우도 일본어로 보내고,
+      // 아니면 사용자가 곡 표에서 직접 옮길 수 있다.
+      if (KANA_RE.test(segment)) ja.push(segment);
+      else if (HANGUL_RE.test(segment)) ko.push(segment);
+      else ja.push(segment);
+    }
+    return {
+      title: base,
+      titleKo: ko.join(" / "),
+      titleJa: ja.join(" / "),
+      split: true
+    };
+  }
+
+  /** rename 미리보기에서 "이 파일은 괄호가 떨어져 나간다"를 판정할 때 쓴다. */
+  function hasLangBracket(text) {
+    return splitBracketTitle(text).split;
+  }
+
   // Strips a leading numeric prefix such as "3-", "03.", "(1) " so the
   // auto-numbering feature never stacks a second number on top of one that
   // is already there (from the filename or a previous auto-numbering pass).
@@ -452,7 +528,10 @@
       const extMatch = folderMatch.match(/\.(mp3|wav)$/i);
       const ext = extMatch ? extMatch[0] : "";
       const to = `${sanitizeForFilename(track.title)}${ext}`;
-      matched.push({ from: folderMatch, to, trackTitle: track.title });
+      // TASK CS-v2.5 — 디스크 파일명에는 괄호를 넣지 않는다(사용자 결정). 대신
+      // 원본에 있던 괄호가 이 rename으로 사라지는 항목을 세어 미리보기에서 경고한다.
+      const bracketDropped = hasLangBracket(baseNameNoExt(folderMatch)) && !hasLangBracket(baseNameNoExt(to));
+      matched.push({ from: folderMatch, to, trackTitle: track.title, bracketDropped });
     }
 
     const unmatchedFolderFiles = folderFiles.filter((f) => !usedFolderFiles.has(f));
@@ -483,6 +562,16 @@
     plan.unmatchedTracks.forEach((track) => {
       addRow("폴더에 없음 (건드리지 않음)", "--danger", track.file.name, "-");
     });
+
+    // TASK CS-v2.5 — 예상하지 못한 파일명 변경은 위험하다. 괄호가 떨어져 나가는
+    // 항목이 하나라도 있으면 [적용] 위에 명시적으로 띄운다.
+    const dropping = plan.matched.filter((e) => e.bracketDropped && e.from !== e.to).length;
+    const warnEl = $("bracketRenameWarn");
+    warnEl.classList.toggle("hidden", dropping === 0);
+    warnEl.className = "status error" + (dropping === 0 ? " hidden" : "");
+    warnEl.textContent = dropping
+      ? `⚠️ 파일명에서 괄호 부분이 제거됩니다 (${dropping}개). 디스크 파일명에는 [괄호 제목 표기]와 무관하게 괄호가 들어가지 않습니다 — 원래 이름을 유지하려면 곡 표의 제목 칸에 괄호를 직접 다시 넣어 주세요.`
+      : "";
 
     renamePreview.classList.remove("hidden");
   }
@@ -892,6 +981,7 @@
     $("generateBtn").disabled = true;
 
     let failed = 0;
+    let splitFromFilename = 0;
     for (let i = 0; i < selected.length; i++) {
       const file = selected[i];
       setStatus(`[${i + 1}/${selected.length}] ${file.name} 분석 중…`);
@@ -903,12 +993,17 @@
         failed++;
         warning = "길이 직접 입력 필요";
       }
+      // TASK CS-v2.5 — 파일명에 이미 들어있는 괄호 제목을 여기서 한 번 떼어내
+      // titleKo/titleJa로 옮긴다. 이후 화면·출력·rename은 전부 괄호 없는
+      // track.title을 보고, 괄호는 [괄호 제목 표기]를 켤 때만 다시 붙는다.
+      const parsed = splitBracketTitle(cleanTitle(file.name));
+      if (parsed.split) splitFromFilename++;
       tracks.push({
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
         file,
-        title: cleanTitle(file.name),
-        titleKo: "",
-        titleJa: "",
+        title: parsed.title,
+        titleKo: parsed.titleKo,
+        titleJa: parsed.titleJa,
         autoNumbered: false,
         duration,
         warning
@@ -916,10 +1011,15 @@
       renderTracks();
     }
 
+    // TASK CS-v2.5 — 괄호를 실제로 떼어냈다면 반드시 알린다. 이 안내가 없으면
+    // 사용자는 제목 일부가 사라졌다고 오해한다.
+    const splitNotice = splitFromFilename
+      ? ` ${selected.length}곡 중 ${splitFromFilename}곡의 파일명에서 괄호 제목을 분리했습니다. [괄호 제목 표기]에서 다시 켤 수 있습니다.`
+      : "";
     setStatus(
-      failed
+      (failed
         ? `${selected.length}개를 추가했습니다. ${failed}개는 길이를 직접 입력해야 합니다.`
-        : `${selected.length}개 파일을 정상적으로 추가했습니다.`,
+        : `${selected.length}개 파일을 정상적으로 추가했습니다.`) + splitNotice,
       failed ? "error" : "success"
     );
     fileInput.value = "";
@@ -1089,7 +1189,7 @@
     const rows = [];
     for (let round = 0; round < repeatCount; round++) {
       for (const track of trackList) {
-        const title = track.title.trim() || cleanTitle(track.file.name);
+        const title = track.title.trim() || splitBracketTitle(cleanTitle(track.file.name)).title;
         rows.push({
           start: cursor,
           title,
@@ -1200,7 +1300,10 @@
   dropzone.addEventListener("drop", e => addFiles(e.dataTransfer.files));
 
   $("stripNumber").addEventListener("change", () => {
-    tracks.forEach(t => { t.title = cleanTitle(t.file.name); t.autoNumbered = false; });
+    // TASK CS-v2.5 — 제목을 파일명에서 다시 만들 때도 괄호는 떼어낸 상태여야 한다.
+    // titleKo/titleJa는 손대지 않는다 — 사용자가 곡 표에서 고쳐 둔 값을 이 토글이
+    // 되돌려 버리면 안 된다.
+    tracks.forEach(t => { t.title = splitBracketTitle(cleanTitle(t.file.name)).title; t.autoNumbered = false; });
     renderTracks();
   });
   $("autoNumber").addEventListener("change", () => {

@@ -22,7 +22,7 @@
 | 스토리보드 | `tools/storyboard/` (빌드 산출물) | `routes/story.js` |
 | 썸네일·커버 스튜디오 | `tools/thumbnail/` | `routes/thumbnail.js` |
 
-현재 버전: **CS-v2.4**
+현재 버전: **CS-v2.5**
 
 ---
 
@@ -64,7 +64,7 @@ npm run check    # node --check server.js  ← server.js 하나만 문법 검사
 ### 3.3 `stripLeadingNumber()`는 의도적으로 두 벌 있습니다
 
 - `routes/timeline.js:65`
-- `tools/timeline/index.html:385`
+- `tools/timeline/index.html:481`
 
 정적 페이지와 서버가 모듈을 공유할 수 없어서 복제한 것입니다. **한쪽을 고치면 반드시
 다른 쪽도 같이 고치세요.** 정규식 리터럴이 서로 완전히 같아야 합니다:
@@ -75,8 +75,30 @@ npm run check    # node --check server.js  ← server.js 하나만 문법 검사
 
 (따옴표 스타일만 서버는 `'`, 클라이언트는 `"`로 다릅니다. 정규식 자체는 동일합니다.)
 `normalizeForMatch()`도 같은 이유로 두 벌입니다(`routes/timeline.js:72`,
-`tools/timeline/index.html:396`). 이 둘이 어긋나면 폴더의 실제 파일명과 화면의 곡 제목이
+`tools/timeline/index.html:492`). 이 둘이 어긋나면 폴더의 실제 파일명과 화면의 곡 제목이
 매칭되지 않아 rename이 조용히 아무 일도 안 하게 됩니다.
+
+### 3.3.1 파일명에 구워진 괄호 제목 분리 (CS-v2.5)
+
+실제 운영 파일명은 `01. Run Past the Gate (교문밖그날).wav`처럼 괄호 제목이 이미
+들어있습니다. 그대로 두면 `track.title`이 괄호까지 삼켜서 CS-v1.6의 [괄호 제목 표기]
+드롭다운을 "사용 안 함"으로 놔도 괄호가 출력에 남습니다 — 옵션이 무력해집니다.
+그래서 `splitBracketTitle()`(`tools/timeline/index.html`)이 파일을 불러오는 시점에
+맨 끝 괄호 한 쌍을 떼어 `titleKo`/`titleJa`로 옮깁니다.
+
+- **분리 판정을 영어 음악 용어 목록(`Live`/`Remix`/`feat.`…)으로 만들지 마세요.**
+  목록은 반드시 샙니다. 규칙은 "괄호 안에 한글·가나·한자가 하나라도 있는가" 하나뿐이고,
+  이게 윈도우 중복 다운로드의 `(1)`·`(2)`까지 같이 걸러 줍니다.
+- 맨 끝 괄호만 대상입니다. `Rock (Live) at Dawn`처럼 중간에 있는 괄호는 건드리지 않습니다.
+- 필드 배정: 가나가 있으면 `titleJa`, 한글만 있으면 `titleKo`, 한자만 있으면 `titleJa`.
+  한글+가나가 섞이면 일본어로 봅니다. `(한국어 / 日本語)`는 슬래시로 나눠 각각 넣되,
+  조각 중 하나라도 한글·일본어가 없으면(`(Live / 昭和)`) 쪼개지 않고 한 덩어리로 둡니다.
+- **드롭다운 기본값은 `none`을 유지합니다.** 대신 실제로 분리했으면 상태 표시줄에
+  몇 곡에서 분리했는지 알립니다 — 이 안내가 없으면 사용자는 제목이 사라졌다고 오해합니다.
+- **디스크 파일명(rename·ZIP)에는 [괄호 제목 표기]와 무관하게 괄호가 들어가지 않습니다**
+  (사용자 결정, CS-v2.5). 대신 rename 미리보기가 괄호가 떨어져 나가는 항목 수를 세어
+  `#bracketRenameWarn`에 경고를 띄웁니다(`computeRenamePlan()`의 `bracketDropped`).
+  4.1의 "미리보기 → 적용"에서 미리보기가 지는 책임입니다 — 지우지 마세요.
 
 ### 3.4 셸은 iframe을 `display` 토글로만 전환합니다
 
@@ -148,7 +170,7 @@ npm run check    # node --check server.js  ← server.js 하나만 문법 검사
 만들지 마세요.**
 
 - 적용은 **미리본 계획 그대로만** 전송합니다. 적용 시점에 계획을 다시 계산하지 않습니다
-  (`tools/timeline/index.html:361`의 `currentRenamePlan`, `tools/yt/app.js`의
+  (`tools/timeline/index.html:383`의 `currentRenamePlan`, `tools/yt/app.js`의
   `publishState.plan`).
 - 목록·순서·대상이 바뀌면 이전 미리보기를 무효화하고 다시 스캔하게 합니다.
 
