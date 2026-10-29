@@ -1071,6 +1071,7 @@ function oauthStatePayload(port) {
       connectionAgeDays: connectionAgeDays(account),
       probablyExpired: isProbablyExpired(account),
       hasToken: Boolean(account.refreshToken),
+      clientIdPreview: account.clientId ? `${account.clientId.slice(0, 12)}…` : '',
     })),
     testingTokenDays: TESTING_REFRESH_TOKEN_DAYS,
     redirectUri: redirectUri(port),
