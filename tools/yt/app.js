@@ -1171,6 +1171,7 @@ function accountRowHtml(account, activeId) {
 
   const meta = [];
   meta.push(account.channelTitle ? `채널: ${escapeHtml(account.channelTitle)}` : '채널 미확인');
+  if (account.clientIdPreview) meta.push(`OAuth: ${escapeHtml(account.clientIdPreview)}`);
   if (!account.hasToken) {
     meta.push('<span class="bad">연결 안 됨 — [재연결] 필요</span>');
   } else if (account.connectionAgeDays !== null && account.connectionAgeDays !== undefined) {
@@ -1249,7 +1250,7 @@ async function saveOAuthClient() {
       }),
     });
     $('clientSecretInput').value = '';
-    showToast('클라이언트 정보를 저장했습니다. 이제 [＋ 계정 추가]를 눌러 주세요.');
+    showToast('새 계정용 OAuth 클라이언트를 저장했습니다. 기존 계정 연결은 그대로 유지됩니다.');
     await loadOAuthStatus();
   } catch (error) {
     setError('publishError', error.message);
